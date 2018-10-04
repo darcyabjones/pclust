@@ -19,6 +19,7 @@ process combineFasta {
     """
 }
 
+
 process mmseqsDB {
     container "soedinglab/mmseqs2"
 
@@ -32,6 +33,28 @@ process mmseqsDB {
     mmseqs createdb "${fasta}" sequence --max-seq-len 14000
     """
 }
+
+
+process mmseqsLinclust {
+    container "soedinglab/mmseqs2"
+
+    input:
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB
+
+    output:
+    file "clusters" into clustDB
+
+    """
+    mkdir -p tmp
+    mmseqs linclust "${sequence}" clusters tmp
+    """
+}
+
+
+
+
+
+/*
 
 
 sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4; sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8; sequenceDB9; sequenceDB10; sequenceDB11 }
@@ -59,7 +82,6 @@ process mmseqsFragPref {
     """
 }
 
-/*
 
 prefFrag.into { prefFrag1; prefFrag2 }
 
