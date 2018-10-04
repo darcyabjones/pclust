@@ -68,6 +68,7 @@ process mmseqsExtractClusters {
     file "clusters.tsv" into uniclust30TSV
     file "clusters_rep.fasta" into uniclust30Fasta
     file "align.m8" into align
+    file "clusters_msa" into msa
 
     """
     mmseqs createtsv \
@@ -90,6 +91,8 @@ process mmseqsExtractClusters {
 
     mmseqs align sequence sequence clusters align -a
     mmseqs convertalis sequence sequence align align.m8
+
+    mmseqs result2msa sequence sequence clusters clusters_msa
     """
 }
 
