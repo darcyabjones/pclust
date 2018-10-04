@@ -3,12 +3,13 @@
 params.fastas = "$baseDir/data/*.faa"
 
 fastas = Channel.fromPath( params.fastas )
-fastas.into { fastas1 }
+
+// Need step to rename fastas to include filename.
 
 process combineFasta {
 
     input:
-    file "*.fa*" from fastas1.collect()
+    file "*.fa*" from fastas.collect()
 
     output:
     file "combined.faa" into combinedFasta
@@ -19,6 +20,7 @@ process combineFasta {
 }
 
 process mmseqsDB {
+    container "soedinglab/mmseqs2"
 
     input:
     file fasta from combinedFasta
@@ -31,10 +33,13 @@ process mmseqsDB {
     """
 }
 
+
 sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4; sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8; sequenceDB9; sequenceDB10; sequenceDB11 }
 
 
 process mmseqsFragPref {
+    container "soedinglab/mmseqs2"
+    publishDir "test"
 
     input:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB1
@@ -54,9 +59,12 @@ process mmseqsFragPref {
     """
 }
 
+/*
+
 prefFrag.into { prefFrag1; prefFrag2 }
 
 process mmseqsFragDiag {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB2
@@ -79,7 +87,8 @@ process mmseqsFragDiag {
 
 
 process mmseqsFragClust {
-    
+    container: "soedinglab/mmseqs2"
+
     input:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
     set "aln_frag", "aln_frag.index" from alnFrag
@@ -100,6 +109,7 @@ cluFrag.into { cluFrag1; cluFrag2; cluFrag3 }
 
 
 process mmseqsFragSubDB {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "clu_frag", "clu_frag.index" from cluFrag1
@@ -120,6 +130,7 @@ fragDB.into { fragDB1; fragDB2; fragDB3; fragDB4 }
 
 
 process mmseqsFilterFragHash {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step_redundancy", "input_step_redundancy.dbtype", "input_step_redundancy.index" from fragDB1
@@ -137,6 +148,7 @@ process mmseqsFilterFragHash {
 
 
 process mmseqsFilterFragClust {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step_redundancy", "input_step_redundancy.dbtype", "input_step_redundancy.index" from fragDB2
@@ -157,6 +169,7 @@ process mmseqsFilterFragClust {
 cluRedundancy.into { cluRedundancy1; cluRedundancy2; cluRedundancy3; cluRedundancy4 }
 
 process mmseqsFilterFragSubDB {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step_redundancy", "input_step_redundancy.dbtype", "input_step_redundancy.index" from fragDB3
@@ -180,6 +193,7 @@ step0DB.into { step0DB1; step0DB2; step0DB3; step0DB4 }
 orderRedundancy.into { orderRedundancy1; orderRedundancy2 }
 
 process mmseqsCluster90SequenceFiltered {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step0", "input_step0.dbtype", "input_step0.index" from step0DB1
@@ -199,6 +213,7 @@ process mmseqsCluster90SequenceFiltered {
 
 
 process mmseqsCluster90FilterDB {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "pref_frag_filtered", "pref_frag_filtered.index" from prefFragFiltered
@@ -217,6 +232,7 @@ process mmseqsCluster90FilterDB {
 
 
 process mmseqsCluster90Align {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step0", "input_step0.dbtype", "input_step0.index" from step0DB2
@@ -244,6 +260,7 @@ process mmseqsCluster90Align {
 
 
 process mmseqsCluster90Clust {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step0", "input_step0.dbtype", "input_step0.index" from step0DB3
@@ -264,6 +281,8 @@ process mmseqsCluster90Clust {
 clu0.into { clu0_1; clu0_2; clu0_3; clu0_4 }
 
 process mmseqsCluster90SubDB {
+    container: "soedinglab/mmseqs2"
+
     input:
     set "input_step0", "input_step0.dbtype", "input_step0.index" from step0DB4
     set "clu_0", "clu_0.index" from clu0_1
@@ -285,6 +304,7 @@ step1DB.into { step1DB1; step1DB2; step1DB3; step1DB4 }
 // Step 1
 
 process mmseqsCluster90BigPreFilterDB {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step1", "input_step1.dbtype", "input_step1.index" from step1DB1
@@ -306,6 +326,7 @@ process mmseqsCluster90BigPreFilterDB {
 
 
 process mmseqsCluster90BigAlign {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step1", "input_step1.dbtype", "input_step1.index" from step1DB2
@@ -333,6 +354,7 @@ process mmseqsCluster90BigAlign {
 
 
 process mmseqsCluster90BigClust {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step1", "input_step1.dbtype", "input_step1.index" from step1DB3
@@ -354,6 +376,7 @@ clu1.into { clu1_1; clu1_2; clu1_3; clu1_4 }
 
 
 process mmseqsCluster90BigMerge {
+    container: "soedinglab/mmseqs2"
 
     publishDir "uniclust90"
 
@@ -380,6 +403,7 @@ process mmseqsCluster90BigMerge {
 
 
 process mmseqsCluster90BigSubDB {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step1", "input_step1.dbtype", "input_step1.index" from step1DB4
@@ -402,6 +426,7 @@ process mmseqsCluster90BigSubDB {
 step2DB.into { step2DB1; step2DB2; step2DB3; step2DB4 }
 
 process mmseqsClusterLowPrefilter {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step2", "input_step2.dbtype", "input_step2.index" from step2DB1
@@ -423,6 +448,7 @@ process mmseqsClusterLowPrefilter {
 
 
 process mmseqsClusterLowAlign {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step2", "input_step2.dbtype", "input_step2.index" from step2DB2
@@ -451,6 +477,7 @@ process mmseqsClusterLowAlign {
 aln2.into { aln2_1; aln2_2 }
 
 process mmseqsCluster50Filter {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "aln_step2", "aln_step2.index" from aln2_1
@@ -469,6 +496,7 @@ process mmseqsCluster50Filter {
 
 
 process mmseqsCluster50Clust {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step2", "input_step2.dbtype", "input_step2.index" from step2DB3
@@ -488,6 +516,7 @@ process mmseqsCluster50Clust {
 
 
 process mmseqsCluster50Merge {
+    container: "soedinglab/mmseqs2"
 
     publishDir "uniclust50"
 
@@ -516,6 +545,7 @@ process mmseqsCluster50Merge {
 
 
 process mmseqsCluster30Clust {
+    container: "soedinglab/mmseqs2"
 
     input:
     set "input_step2", "input_step2.dbtype", "input_step2.index" from step2DB4
@@ -535,6 +565,7 @@ process mmseqsCluster30Clust {
 
 
 process mmseqsCluster30Merge {
+    container: "soedinglab/mmseqs2"
 
     publishDir "uniclust30"
 
@@ -563,6 +594,7 @@ process mmseqsCluster30Merge {
 
 
 process mmseqsCluster30TSV {
+    container: "soedinglab/mmseqs2"
 
     publishDir "uniclust30"
 
@@ -596,6 +628,7 @@ process mmseqsCluster30TSV {
 }
 
 process mmseqsCluster50TSV {
+    container: "soedinglab/mmseqs2"
 
     publishDir "uniclust50"
 
@@ -616,6 +649,7 @@ process mmseqsCluster50TSV {
 }
 
 process mmseqsCluster90TSV {
+    container: "soedinglab/mmseqs2"
 
     publishDir "uniclust90"
 
@@ -634,6 +668,8 @@ process mmseqsCluster90TSV {
       uniclust90.tsv
     """
 }
+*/
+
 //process mmseqsCluster30ToMSA {
 
 //    publishDir ""
