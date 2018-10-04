@@ -20,6 +20,8 @@ process combineFasta {
 }
 
 
+sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4; sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8; sequenceDB9; sequenceDB10; sequenceDB11 }
+
 process mmseqsDB {
     container "soedinglab/mmseqs2"
 
@@ -39,19 +41,51 @@ process mmseqsLinclust {
     container "soedinglab/mmseqs2"
 
     input:
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB1
 
     output:
-    file "clusters" into clustDB
+    file "clusters", "clusters.index" into clustDB
 
     """
     mkdir -p tmp
-    mmseqs linclust "${sequence}" clusters tmp
+    mmseqs linclust sequence clusters tmp
     """
 }
 
 
+process mmseqsExtractClusters {
+    container: "soedinglab/mmseqs2"
 
+    publishDir "clusters"
+
+    input:
+    set "clusters", "clusters.index" from clustDB
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB2
+
+    output:
+    file "clusters.tsv" into uniclust30TSV
+    file "clusters_rep.fasta" into uniclust30Fasta
+
+    """
+    mmseqs createtsv \
+      sequence \
+      sequence \
+      clusters \
+      clusters.tsv
+
+    mmseqs result2repseq \
+      sequence \
+      clusters \
+      clusters_rep
+
+    mmseqs result2flat \
+      sequence \
+      sequence \
+      clusters_rep \
+      clusters_rep.fasta \
+      --use-fasta-header
+    """
+}
 
 
 /*
