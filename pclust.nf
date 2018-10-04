@@ -20,8 +20,6 @@ process combineFasta {
 }
 
 
-sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4; sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8; sequenceDB9; sequenceDB10; sequenceDB11 }
-
 process mmseqsDB {
     container "soedinglab/mmseqs2"
 
@@ -36,6 +34,7 @@ process mmseqsDB {
     """
 }
 
+sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4; sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8; sequenceDB9; sequenceDB10; sequenceDB11 }
 
 process mmseqsLinclust {
     container "soedinglab/mmseqs2"
@@ -44,27 +43,29 @@ process mmseqsLinclust {
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB1
 
     output:
-    file "clusters", "clusters.index" into clustDB
+    set "clusters", "clusters.index" into clustDB
 
     """
     mkdir -p tmp
-    mmseqs linclust sequence clusters tmp
+    mmseqs cluster sequence clusters tmp -s 5 --cluster-steps 5 --min-seq-id 0.3
     """
 }
 
+clustDB.into {clustDB1; clustDB2; clustDB3 }
 
 process mmseqsExtractClusters {
-    container: "soedinglab/mmseqs2"
+    container "soedinglab/mmseqs2"
 
     publishDir "clusters"
 
     input:
-    set "clusters", "clusters.index" from clustDB
+    set "clusters", "clusters.index" from clustDB1
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB2
 
     output:
     file "clusters.tsv" into uniclust30TSV
     file "clusters_rep.fasta" into uniclust30Fasta
+    file "align.m8" into align
 
     """
     mmseqs createtsv \
@@ -84,11 +85,149 @@ process mmseqsExtractClusters {
       clusters_rep \
       clusters_rep.fasta \
       --use-fasta-header
+
+    mmseqs align sequence sequence clusters align -a
+    mmseqs convertalis sequence sequence align align.m8    
     """
 }
 
 
+process profile {
+    container "soedinglab/mmseqs2"
+    
+    input:
+    set "clusters", "clusters.index" from clustDB2
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
+
+    output:
+    set "profile", "profile.dbtype", "profile.index", "profile_consensus", "profile_consensus.dbtype", "profile_consensus.index", "profile_consensus_h", "profile_consensus_h.index", "profile_h", "profile_h.index" into profileDB
+
+    """
+    mmseqs result2profile sequence sequence clusters profile
+    """
+}
+
+process profileClust {
+    container "soedinglab/mmseqs2"
+    
+    input:
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
+    set "profile", "profile.dbtype", "profile.index", "profile_consensus", "profile_consensus.dbtype", "profile_consensus.index", "profile_consensus_h", "profile_consensus_h.index", "profile_h", "profile_h.index" from profileDB
+    
+    output:
+    set "profile_clusters", "profile_clusters.index" into profileClustDB
+
+    """
+    mkdir -p tmp
+    mmseqs search profile profile_consensus result tmp -s 7.5 -e 0.05 --add-self-matches --num-iterations 1
+    mmseqs clust profile result profile_clusters
+    """
+}
+
+process mergeProfile {
+    container "soedinglab/mmseqs2"
+
+    input:
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB4
+    set "clusters", "clusters.index" from clustDB3
+    set "profile_clusters", "profile_clusters.index" from profileClustDB
+
+    output:
+    set "merged_clusters", "merged_clusters.index" into mergedClustDB
+
+    """
+    mmseqs mergeclusters sequence merged_clusters clusters profile_clusters
+    """
+
+}
+
+process mmseqsExtractProfileClusters {
+    container "soedinglab/mmseqs2"
+
+    publishDir "profile_clusters"
+
+    input:
+    set "merged_clusters", "merged_clusters.index" from mergedClustDB
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB4
+
+    output:
+    file "clusters.tsv" into uniclust30TSV2
+    file "clusters_rep.fasta" into uniclust30Fasta2
+    file "align.m8" into align2
+
+    """
+    mmseqs createtsv \
+      sequence \
+      sequence \
+      merged_clusters \
+      clusters.tsv
+
+    mmseqs result2repseq \
+      sequence \
+      merged_clusters \
+      clusters_rep
+
+    mmseqs result2flat \
+      sequence \
+      sequence \
+      clusters_rep \
+      clusters_rep.fasta \
+      --use-fasta-header
+
+    mmseqs align sequence sequence merged_clusters align -a
+    mmseqs convertalis sequence sequence align align.m8    
+    """
+}
+
 /*
+
+process mmseqsCluster30Clust {
+    container: "soedinglab/mmseqs2"
+
+    input:
+    set "input_step2", "input_step2.dbtype", "input_step2.index" from step2DB4
+    set "aln_step2", "aln_step2.index" from aln2_2
+    
+    output:
+    set "clu_uniclust30", "clu_uniclust30.index" into cluUniclust30
+
+    """
+    mmseqs clust \
+      input_step2 \
+      aln_step2 \
+      clu_uniclust30 \
+      --cluster-mode 0
+    """
+}
+
+
+process mmseqsCluster30Merge {
+    container: "soedinglab/mmseqs2"
+
+    publishDir "uniclust30"
+
+    input:
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB8
+    set "clu_frag", "clu_frag.index" from cluFrag3
+    set "clu_redundancy", "clu_redundancy.index" from cluRedundancy4
+    set "clu_0", "clu_0.index" from clu0_4
+    set "clu_1", "clu_1.index" from clu1_3
+    set "clu_uniclust30", "clu_uniclust30.index" from cluUniclust30
+
+    output:
+    set "uniclust30", "uniclust30.index" into uniclust30
+
+    """
+    mmseqs mergeclusters \
+      sequence \
+      uniclust30 \
+      clu_frag \
+      clu_redundancy \
+      clu_0 \
+      clu_1 \
+      clu_uniclust30
+    """
+}
 
 
 sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4; sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8; sequenceDB9; sequenceDB10; sequenceDB11 }
@@ -600,53 +739,6 @@ process mmseqsCluster50Merge {
 }
 
 
-process mmseqsCluster30Clust {
-    container: "soedinglab/mmseqs2"
-
-    input:
-    set "input_step2", "input_step2.dbtype", "input_step2.index" from step2DB4
-    set "aln_step2", "aln_step2.index" from aln2_2
-    
-    output:
-    set "clu_uniclust30", "clu_uniclust30.index" into cluUniclust30
-
-    """
-    mmseqs clust \
-      input_step2 \
-      aln_step2 \
-      clu_uniclust30 \
-      --cluster-mode 0
-    """
-}
-
-
-process mmseqsCluster30Merge {
-    container: "soedinglab/mmseqs2"
-
-    publishDir "uniclust30"
-
-    input:
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB8
-    set "clu_frag", "clu_frag.index" from cluFrag3
-    set "clu_redundancy", "clu_redundancy.index" from cluRedundancy4
-    set "clu_0", "clu_0.index" from clu0_4
-    set "clu_1", "clu_1.index" from clu1_3
-    set "clu_uniclust30", "clu_uniclust30.index" from cluUniclust30
-
-    output:
-    set "uniclust30", "uniclust30.index" into uniclust30
-
-    """
-    mmseqs mergeclusters \
-      sequence \
-      uniclust30 \
-      clu_frag \
-      clu_redundancy \
-      clu_0 \
-      clu_1 \
-      clu_uniclust30
-    """
-}
 
 
 process mmseqsCluster30TSV {
