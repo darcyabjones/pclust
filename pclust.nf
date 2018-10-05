@@ -189,3 +189,19 @@ with open("${msas}", "r") as handle:
         current.append(line)
     """
 }
+
+
+process estimateTrees {
+    container "quay.io/biocontainers/fasttree"
+    publishDir "trees"
+
+    input:
+    file msa from indivFastas
+
+    output:
+    file "${msa.baseName}.nwk" into indivTrees
+
+    """
+    fasttree < "${msa}" > "${msa.baseName}.nwk"
+    """
+}
