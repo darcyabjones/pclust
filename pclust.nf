@@ -38,10 +38,13 @@ process createSequenceDB {
 }
 
 // Duplicate the channel
+/*
 sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4;
                   sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8;
                   sequenceDB9; sequenceDB10; sequenceDB11 }
+*/
 
+sequenceDB.tap { sequenceDB1 }
 
 // Do the first clustering pass.
 // This tends to get to about 50% identity.
@@ -62,6 +65,7 @@ process mmseqsClust {
 
 clustDB.into {clustDB1; clustDB2; clustDB3 }
 
+sequenceDB.tap { sequenceDB2 }
 
 // Do the second clustering pass.
 // Essentially, you align the cluster profiles against the profile consensus sequences
@@ -72,7 +76,7 @@ process mmseqsProfileClust {
 
     input:
     set "clusters", "clusters.index" from clustDB2
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB2
 
     output:
     set "profile_clusters", "profile_clusters.index" into profileClustDB
@@ -91,6 +95,7 @@ process mmseqsProfileClust {
 
 clustDB1.concat( profileClustDB ).into {allClusters1; allClusters2 }
 
+sequenceDB.tap { sequenceDB3 }
 
 // Extract some information and statistics about the clusters
 process mmseqsExtractClusters {
@@ -100,7 +105,7 @@ process mmseqsExtractClusters {
 
     input:
     set file(clusters), file(clusters_index) from allClusters1
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB2
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
 
     output:
     file "${clusters}.tsv" into clustersTSV
@@ -131,6 +136,7 @@ process mmseqsExtractClusters {
     """
 }
 
+sequenceDB.tap { sequenceDB4 }
 
 // Construct multiple sequence alignments from the clusters.
 process getClusterMSAs {
@@ -139,7 +145,7 @@ process getClusterMSAs {
 
     input:
     set file(clusters), file(clusters_index) from allClusters2
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB4
 
     output:
     set "${clusters}_msa", "${clusters}_msa.index" into clustersMSAs
