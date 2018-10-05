@@ -159,10 +159,10 @@ process getClusterMSAs {
 
 
 process splitMSAs {
-    publishDir "test"
+    publishDir "cluster_msas"
 
     input:
-    file msas from clustersMSAFasta
+    file msas from clustersMSAFasta.filter { clu, idx -> clu.index}
 
     output:
     file "*.fasta" into indivFastas
@@ -192,16 +192,16 @@ with open("${msas}", "r") as handle:
 
 
 process estimateTrees {
-    container "quay.io/biocontainers/fasttree"
+    container "quay.io/biocontainers/fasttree:2.1.10--h470a237_2"
     publishDir "trees"
 
     input:
-    file msa from indivFastas
+    file msa from indivFastas.flatMap()
 
     output:
     file "${msa.baseName}.nwk" into indivTrees
 
     """
-    fasttree < "${msa}" > "${msa.baseName}.nwk"
+    fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
     """
 }
