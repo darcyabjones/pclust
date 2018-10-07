@@ -93,7 +93,8 @@ process mmseqsProfileClust {
 }
 
 
-clustDB1.concat( profileClustDB ).into {allClusters1; allClusters2 }
+//clustDB1.concat( profileClustDB ).into {allClusters1; allClusters2 }
+profileClustDB.into {allClusters1; allClusters2 }
 
 sequenceDB.tap { sequenceDB3 }
 
@@ -168,7 +169,7 @@ process splitMSAs {
     publishDir "cluster_msas"
 
     input:
-    file msas from clustersMSAFasta.filter { clu, idx -> clu.index}
+    file msas from clustersMSAFasta
 
     output:
     file "*.fasta" into indivFastas
