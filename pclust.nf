@@ -4,27 +4,53 @@ params.genomes = "$baseDir/data/*.{fasta,gff3}"
 
 genomes = Channel.fromFilePairs( params.genomes )
 
+genomes.tap { genomes1 }
 
 process extractCDSs {
-    container "quay.io/biocontainers/bedtools"
+    container "quay.io/biocontainers/genometools-genometools:1.5.10--h470a237_1"
 
     input:
-    set val(label), file(fasta), file(gff) from genomes
+    set val(label), file(fasta), file(gff) from genomes1
 
     output:
     file "${label}.fasta" into CDSs
 
     """
-    bedtools 
+    gt extractfeat \
+      -type CDS \
+      -join \
+      -seqid \
+      -seqfile "${fasta}" \
+      "${gff}" \
+      > "${label}.fna"
     """
 }
+
+
+CDSs.tap { CDSs1 }
+
+process translateCDSs {
+    container "quay.io/biocontainers/genometools-genometools:1.5.10--h470a237_1"
+
+    input:
+    file fasta from CDSs1
+
+    output:
+    file "${fasta.baseName}.faa" into proteins
+
+    """
+    gt seqtranslate -reverse no "${fasta}" > "${fasta.baseName}.faa"
+    """
+}
+
+proteins.tap { proteins1 }
 
 // Combine the fasta files in preparation for clustering
 // Need step to rename fastas to include filename.
 process combineFasta {
 
     input:
-    file "*.fa*" from fastas.collect()
+    file "*.fa*" from proteins.collect()
 
     output:
     file "combined.faa" into combinedFasta
