@@ -1,6 +1,6 @@
 FROM python:2.7.15-alpine3.8
 MAINTAINER Darcy Jones <darcy.ab.jones@gmail.com>
-RUN apk add --no-cache build-base openjdk7="7.181.2.6.14-r0" perl \
+RUN apk add --no-cache build-base bash openjdk7="7.181.2.6.14-r0" perl \
   && pip install --no-cache-dir numpy biopython
 
 ENV EMBOSS_PREFIX="/opt/EMBOSS-6.5.7"
