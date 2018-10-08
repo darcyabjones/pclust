@@ -1,9 +1,23 @@
 #!/usr/bin/env nextflow
 
-params.fastas = "$baseDir/data/*.faa"
+params.genomes = "$baseDir/data/*.{fasta,gff3}"
 
-fastas = Channel.fromPath( params.fastas )
+genomes = Channel.fromFilePairs( params.genomes )
 
+
+process extractCDSs {
+    container "quay.io/biocontainers/bedtools"
+
+    input:
+    set val(label), file(fasta), file(gff) from genomes
+
+    output:
+    file "${label}.fasta" into CDSs
+
+    """
+    bedtools 
+    """
+}
 
 // Combine the fasta files in preparation for clustering
 // Need step to rename fastas to include filename.
@@ -37,17 +51,12 @@ process createSequenceDB {
     """
 }
 
-// Duplicate the channel
-/*
-sequenceDB.into { sequenceDB1; sequenceDB2; sequenceDB3; sequenceDB4;
-                  sequenceDB5; sequenceDB6; sequenceDB7; sequenceDB8;
-                  sequenceDB9; sequenceDB10; sequenceDB11 }
-*/
-
-sequenceDB.tap { sequenceDB1 }
 
 // Do the first clustering pass.
 // This tends to get to about 50% identity.
+
+sequenceDB.tap { sequenceDB1 }
+
 process mmseqsClust {
     container "soedinglab/mmseqs2"
 
@@ -63,19 +72,21 @@ process mmseqsClust {
     """
 }
 
-clustDB.into {clustDB1; clustDB2; clustDB3 }
 
-sequenceDB.tap { sequenceDB2 }
 
 // Do the second clustering pass.
 // Essentially, you align the cluster profiles against the profile consensus sequences
 // then merge the clusters.
 // This gets clusters down to ~10-20 % identity.
+
+sequenceDB.tap { sequenceDB2 }
+clustDB.tap {clustDB1 }
+
 process mmseqsProfileClust {
     container "soedinglab/mmseqs2"
 
     input:
-    set "clusters", "clusters.index" from clustDB2
+    set "clusters", "clusters.index" from clustDB1
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB2
 
     output:
@@ -93,19 +104,28 @@ process mmseqsProfileClust {
 }
 
 
-clustDB1.concat( profileClustDB ).into {allClusters1; allClusters2 }
-
 sequenceDB.tap { sequenceDB3 }
+
+clustDB.tap {clustDB1 }
+profileClustDB.tap { profileClustDB1 }
+
+allClusters = Channel.value("identity").combine(clustDB1).concat(
+    Channel.value("profile").combine( profileClustDB1 )
+    )
+
+allClusters.tap { allClusters1 }
 
 // Extract some information and statistics about the clusters
 process mmseqsExtractClusters {
     container "soedinglab/mmseqs2"
 
-    publishDir "clusters"
+    publishDir { "clusters/${type}" }
+    tag { type }
 
     input:
-    set file(clusters), file(clusters_index) from allClusters1
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
+    set val(type), file(clusters), file(clusters_index) from allClusters1
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
+        "sequence_h", "sequence_h.index" from sequenceDB3
 
     output:
     file "${clusters}.tsv" into clustersTSV
@@ -137,19 +157,22 @@ process mmseqsExtractClusters {
 }
 
 sequenceDB.tap { sequenceDB4 }
+allClusters.tap { allClusters2 }
 
 // Construct multiple sequence alignments from the clusters.
 process getClusterMSAs {
     container "soedinglab/mmseqs2"
-    publishDir "cluster_msas"
+    publishDir "msas"
+    tag { type }
 
     input:
-    set file(clusters), file(clusters_index) from allClusters2
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB4
+    set val(type), file(clusters), file(clusters_index) from allClusters2
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
+        "sequence_h", "sequence_h.index" from sequenceDB4
 
     output:
-    set "${clusters}_msa", "${clusters}_msa.index" into clustersMSAs
-    file "${clusters}_msa.fasta" into clustersMSAFasta
+    set val(type), "${clusters}_msa", "${clusters}_msa.index" into clustersMSAs
+    set val(type), "${clusters}_msa.fasta" into clustersMSAFasta
 
     """
     mmseqs result2msa sequence sequence "${clusters}" "${clusters}_msa"
@@ -163,15 +186,17 @@ process getClusterMSAs {
     */
 }
 
+clustersMSAFasta.tap { clustersMSAFasta1 }
 
 process splitMSAs {
-    publishDir "cluster_msas"
+    publishDir { "msas/${type}"}
+    tag { type }
 
     input:
-    file msas from clustersMSAFasta.filter { clu, idx -> clu.index}
+    set val(type), file(msas) from clustersMSAFasta1
 
     output:
-    file "*.fasta" into indivFastas
+    set val(type), file("*.fasta") into clustersMSAFastaIndiv
 
     """
 #!/usr/bin/env python3
@@ -202,7 +227,7 @@ process estimateTrees {
     publishDir "trees"
 
     input:
-    file msa from indivFastas.flatMap()
+    set val(type), file(msa) from clustersMSAFastaIndiv.transpose()
 
     output:
     file "${msa.baseName}.nwk" into indivTrees
