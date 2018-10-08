@@ -34,6 +34,7 @@ process combineFasta {
     """
 }
 
+combinedFasta.tap { combinedFasta1 }
 
 // Create the sequence database
 // This will get reused a lot.
@@ -41,7 +42,7 @@ process createSequenceDB {
     container "soedinglab/mmseqs2"
 
     input:
-    file fasta from combinedFasta
+    file fasta from combinedFasta1
 
     output:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  into sequenceDB
@@ -234,5 +235,22 @@ process estimateTrees {
 
     """
     fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
+    """
+}
+
+combinedFasta.tap { combinedFasta1 }
+
+process effectorp {
+    container "effectorp"
+    publishDir "effectorp"
+
+    input:
+    file fasta from combinedFasta1
+
+    output:
+    file "table.tsv" into effectorpResults
+
+    """
+    EffectorP.py -s -i "${fasta}" > table.tsv
     """
 }
