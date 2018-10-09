@@ -2,55 +2,40 @@
 
 params.genomes = "$baseDir/data/*.{fasta,gff3}"
 
-genomes = Channel.fromFilePairs( params.genomes )
+genomes = Channel.fromFilePairs( params.genomes, flat: true )
 
 genomes.tap { genomes1 }
 
-process extractCDSs {
+process extractProteins {
     container "quay.io/biocontainers/genometools-genometools:1.5.10--h470a237_1"
 
     input:
     set val(label), file(fasta), file(gff) from genomes1
 
     output:
-    file "${label}.fasta" into CDSs
+    file "${label}.faa" into proteins
 
     """
     gt extractfeat \
       -type CDS \
+      -translate \
+      -matchdescstart \
       -join \
-      -seqid \
+      -retainids \
       -seqfile "${fasta}" \
       "${gff}" \
-      > "${label}.fna"
+      > "${label}.faa"
     """
 }
 
-
-CDSs.tap { CDSs1 }
-
-process translateCDSs {
-    container "quay.io/biocontainers/genometools-genometools:1.5.10--h470a237_1"
-
-    input:
-    file fasta from CDSs1
-
-    output:
-    file "${fasta.baseName}.faa" into proteins
-
-    """
-    gt seqtranslate -reverse no "${fasta}" > "${fasta.baseName}.faa"
-    """
-}
-
-proteins.tap { proteins1 }
+proteins.into { proteins1; proteins2 }
 
 // Combine the fasta files in preparation for clustering
 // Need step to rename fastas to include filename.
 process combineFasta {
 
     input:
-    file "*.fa*" from proteins.collect()
+    file "*.fa*" from proteins1.collect()
 
     output:
     file "combined.faa" into combinedFasta
@@ -60,15 +45,14 @@ process combineFasta {
     """
 }
 
-combinedFasta.tap { combinedFasta1 }
-
 // Create the sequence database
 // This will get reused a lot.
 process createSequenceDB {
     container "soedinglab/mmseqs2"
+    publishDir "clusters"
 
     input:
-    file fasta from combinedFasta1
+    file fasta from combinedFasta
 
     output:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  into sequenceDB
@@ -79,13 +63,22 @@ process createSequenceDB {
 }
 
 
+sequenceDB.into {
+    sequenceDB1; 
+    sequenceDB2;
+    sequenceDB3;
+    sequenceDB4;
+    sequenceDB5;
+    sequenceDB6
+    }
+
 // Do the first clustering pass.
 // This tends to get to about 50% identity.
 
-sequenceDB.tap { sequenceDB1 }
 
 process mmseqsClust {
     container "soedinglab/mmseqs2"
+    publishDir "clusters"
 
     input:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB1
@@ -99,18 +92,22 @@ process mmseqsClust {
     """
 }
 
-
+clustDB.into {
+    clustDB1;
+    clustDB2;
+    clustDB3;
+    clustDB4;
+    clustDB5
+}
 
 // Do the second clustering pass.
 // Essentially, you align the cluster profiles against the profile consensus sequences
 // then merge the clusters.
 // This gets clusters down to ~10-20 % identity.
 
-sequenceDB.tap { sequenceDB2 }
-clustDB.tap {clustDB1 }
-
 process mmseqsProfileClust {
     container "soedinglab/mmseqs2"
+    publishDir "clusters"
 
     input:
     set "clusters", "clusters.index" from clustDB1
@@ -130,17 +127,14 @@ process mmseqsProfileClust {
     """
 }
 
+profileClustDB.into { profileClustDB1; profileClustDB2 }
 
-sequenceDB.tap { sequenceDB3 }
 
-clustDB.tap {clustDB1 }
-profileClustDB.tap { profileClustDB1 }
-
-allClusters = Channel.value("identity").combine(clustDB1).concat(
+allClusters = Channel.value("identity").combine(clustDB2).concat(
     Channel.value("profile").combine( profileClustDB1 )
     )
 
-allClusters.tap { allClusters1 }
+allClusters.into { allClusters1; allClusters2 }
 
 // Extract some information and statistics about the clusters
 process mmseqsExtractClusters {
@@ -183,8 +177,7 @@ process mmseqsExtractClusters {
     """
 }
 
-sequenceDB.tap { sequenceDB4 }
-allClusters.tap { allClusters2 }
+
 
 // Construct multiple sequence alignments from the clusters.
 process getClusterMSAs {
@@ -206,12 +199,12 @@ process getClusterMSAs {
     mmseqs result2flat sequence sequence "${clusters}_msa" "${clusters}_msa.fasta"
     """
 
-    /*
-      mmseqs cluster DB DB_clu tmp
-      mmseqs createseqfiledb DB DB_clu DB_clu_seq
-      mmseqs apply DB_clu_seq DB_clu_seq_msa -- clustalo -i -  --threads=1
-    */
+    //  mmseqs cluster DB DB_clu tmp
+    //  mmseqs createseqfiledb DB DB_clu DB_clu_seq
+    //  mmseqs apply DB_clu_seq DB_clu_seq_msa -- clustalo -i -  --threads=1
 }
+
+/*
 
 clustersMSAFasta.tap { clustersMSAFasta1 }
 
@@ -280,3 +273,5 @@ process effectorp {
     EffectorP.py -s -i "${fasta}" > table.tsv
     """
 }
+
+*/
