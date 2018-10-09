@@ -2,3 +2,5 @@
 .nextflow
 work
 data
+*.tar.gz
+*.tar.Z
