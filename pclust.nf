@@ -262,8 +262,7 @@ process extractClusterFastaLikes {
         "sequence_h", "sequence_h.index" from sequenceDB5
 
     output:
-    set val(type), file("${clusters}_sequences.fastalike")
-        into allClustersFastaLikes
+    set val(type), file("${clusters}_sequences.fastalike") into allClustersFastaLikes
 
     """
     mmseqs createseqfiledb sequence "${clusters}" "${clusters}_sequences"
@@ -284,32 +283,32 @@ process extractClusterFastas {
     tag { type }
 
     input:
-    set val(type), file(fastaLikes) from allClustersFastaLikes
+    set val(type), file(fastalike) from allClustersFastaLikes
 
     output:
     set val(type), file("*.fasta") into allClustersFasta
 
     """
-    #!/usr/bin/env python3
+#!/usr/bin/env python3
 
-    current_name = None
-    current = []
-    last_was = False
-    with open("${msas}", "r") as handle:
-        for line in handle:
-            if line.startswith(">"):
-                if last_was:
-                    if len(current) > 1:
-                        with open(current_name, "w") as out_handle:
-                            print("".join(current[:-1]), file=out_handle)
-                    current = []
-                    current_name = line.lstrip(">").strip().split(" ", 1)[0] + ".fasta"
-                last_was = True
-            else:
-                last_was = False
+current_name = None
+current = []
+last_was = False
+with open("${fastalike}", "r") as handle:
+    for line in handle:
+        if line.startswith(">"):
+            if last_was:
+                if len(current) > 1:
+                    with open(current_name, "w") as out_handle:
+                        print("".join(current[:-1]), file=out_handle)
+                current = []
+                current_name = line.lstrip(">").strip().split(" ", 1)[0] + ".fasta"
+            last_was = True
+        else:
+            last_was = False
 
-            current.append(line)
-    """.stripIndent()
+        current.append(line)
+    """
 }
 
 
