@@ -76,7 +76,7 @@ sequenceDB.into {
 // This tends to get to about 50% identity.
 
 
-process mmseqsClust {
+process clust {
     container "soedinglab/mmseqs2"
     publishDir "clusters"
 
@@ -105,7 +105,7 @@ clustDB.into {
 // then merge the clusters.
 // This gets clusters down to ~10-20 % identity.
 
-process mmseqsProfileClust {
+process profileClust {
     container "soedinglab/mmseqs2"
     publishDir "clusters"
 
@@ -129,15 +129,38 @@ process mmseqsProfileClust {
 
 profileClustDB.into { profileClustDB1; profileClustDB2 }
 
+/*
+// Cluster a third time with HMMs.
 
+process hmms {
+    container "pclust/hhblits_mmseqs2"
+    
+    input:
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
+    set "profile_clusters", "profile_clusters.index" from profileClustDB1
+
+    output:
+    file "profile_clusters_hmms" into profileClustHMMs
+    
+    """
+    mmseqs result2msa sequence sequence profile_clusters profile_clusters_msa --compress
+    ln -s sequence_h profile_clusters_msa_header.ffdata
+    ln -s sequence_h.index profile_clusters_msa_header.ffindex
+    ln -s sequence profile_clusters_msa_sequence.ffdata
+    ln -s sequence.index profile_clusters_msa_sequence.ffindex
+    mpirun -np 2 cstranslate_mpi -i profile_clusters_msa -o profile_clusters_hmms -A /opt/hh-suite/data/cs219.lib -D /opt/hh-suite/data/context_data.lib -x 0.3 -c 4 -I ca3m
+    """
+}
+
+*/
 allClusters = Channel.value("identity").combine(clustDB2).concat(
-    Channel.value("profile").combine( profileClustDB1 )
+    Channel.value("profile").combine( profileClustDB2 )
     )
 
 allClusters.into { allClusters1; allClusters2 }
 
 // Extract some information and statistics about the clusters
-process mmseqsExtractClusters {
+process extractClusters {
     container "soedinglab/mmseqs2"
 
     publishDir { "clusters/${type}" }
@@ -146,7 +169,7 @@ process mmseqsExtractClusters {
     input:
     set val(type), file(clusters), file(clusters_index) from allClusters1
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index" from sequenceDB3
+        "sequence_h", "sequence_h.index" from sequenceDB4
 
     output:
     file "${clusters}.tsv" into clustersTSV
@@ -178,35 +201,30 @@ process mmseqsExtractClusters {
 }
 
 
-
 // Construct multiple sequence alignments from the clusters.
 process getClusterMSAs {
-    container "soedinglab/mmseqs2"
+    container "pclust/mafft_mmseqs2"
     publishDir "msas"
     tag { type }
 
     input:
     set val(type), file(clusters), file(clusters_index) from allClusters2
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index" from sequenceDB4
+        "sequence_h", "sequence_h.index" from sequenceDB5
 
     output:
     set val(type), "${clusters}_msa", "${clusters}_msa.index" into clustersMSAs
     set val(type), "${clusters}_msa.fasta" into clustersMSAFasta
 
     """
-    mmseqs result2msa sequence sequence "${clusters}" "${clusters}_msa"
+    mmseqs createseqfiledb sequence "${clusters}" "${clusters}_sequences"
+    mmseqs apply "${clusters}_sequences" "${clusters}_msa" -- mafft --retree 2 --maxiterate 0 -
     mmseqs result2flat sequence sequence "${clusters}_msa" "${clusters}_msa.fasta"
     """
-
-    //  mmseqs cluster DB DB_clu tmp
-    //  mmseqs createseqfiledb DB DB_clu DB_clu_seq
-    //  mmseqs apply DB_clu_seq DB_clu_seq_msa -- clustalo -i -  --threads=1
 }
 
-/*
 
-clustersMSAFasta.tap { clustersMSAFasta1 }
+clustersMSAFasta.into { clustersMSAFasta1; clustersMSAFasta2 }
 
 process splitMSAs {
     publishDir { "msas/${type}"}
@@ -240,8 +258,7 @@ with open("${msas}", "r") as handle:
         current.append(line)
     """
 }
-
-
+/*
 process estimateTrees {
     container "quay.io/biocontainers/fasttree:2.1.10--h470a237_2"
     publishDir "trees"
@@ -256,22 +273,61 @@ process estimateTrees {
     fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
     """
 }
+*/
 
-combinedFasta.tap { combinedFasta1 }
+process getUniqueSequences {
+    container "soedinglab/mmseqs2"
 
+    input:
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
+        "sequence_h", "sequence_h.index" from sequenceDB6
+
+    output:
+    file "unique.tsv" into uniqueClusters
+    file "unique_rep.fasta" into uniqueProteins
+    
+    """
+    mkdir -p tmp
+    mmseqs linclust sequence unique tmp --min-seq-id 1.0 -c 1.0
+    
+    mmseqs createtsv \
+      sequence \
+      sequence \
+      unique \
+      unique.tsv
+
+    mmseqs result2repseq \
+      sequence \
+      unique \
+      unique_rep
+
+    mmseqs result2flat \
+      sequence \
+      sequence \
+      unique_rep \
+      unique_rep.fasta \
+      --use-fasta-header
+    """
+}
+
+uniqueProteins.splitFasta(by: 2000).into { uniqueProteins1; uniqueProteins2 }
+
+/*
 process effectorp {
-    container "effectorp"
+    container "pclust/sperschneider"
     publishDir "effectorp"
 
     input:
-    file fasta from combinedFasta1
+    file fasta from uniqueProteins1
 
     output:
-    file "table.tsv" into effectorpResults
+    file "table.tsv" into effectorpChunkedResults
 
     """
     EffectorP.py -s -i "${fasta}" > table.tsv
     """
 }
+
+effectorpResults = effectorpChunkedResults.collectFile(name: "annotations/effectorp.tsv")
 
 */

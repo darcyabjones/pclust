@@ -4,3 +4,4 @@ work
 data
 *.tar.gz
 *.tar.Z
+*.tgz
