@@ -88,6 +88,7 @@ process combineFasta {
 process createSequenceDB {
     container "soedinglab/mmseqs2"
     publishDir "clusters"
+    label 'mmseqs'
 
     input:
     file fasta from combinedFasta
@@ -106,7 +107,8 @@ sequenceDB.into {
     sequenceDB3;
     sequenceDB4;
     sequenceDB5;
-    sequenceDB6
+    sequenceDB6;
+    sequenceDB7
     }
 
 
@@ -117,6 +119,7 @@ sequenceDB.into {
 process clust {
     container "soedinglab/mmseqs2"
     publishDir "clusters"
+    label 'mmseqs'
 
     input:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
@@ -147,6 +150,7 @@ clustDB.into {
 process profileClust {
     container "soedinglab/mmseqs2"
     publishDir "clusters"
+    label 'mmseqs'
 
     input:
     set "clusters", "clusters.index" from clustDB1
@@ -199,7 +203,7 @@ allClusters = Channel
         Channel.value("profile").combine( profileClustDB2 )
     )
 
-allClusters.into { allClusters1; allClusters2 }
+allClusters.into { allClusters1; allClusters2; allClusters3 }
 
 
 /*
@@ -208,9 +212,9 @@ allClusters.into { allClusters1; allClusters2 }
  */
 process extractClusterStats {
     container "soedinglab/mmseqs2"
-
     publishDir { "clusters/${type}" }
     tag { type }
+    label 'mmseqs'
 
     input:
     set val(type), file(clusters), file(clusters_index) from allClusters1
@@ -253,8 +257,8 @@ process extractClusterStats {
  */
 process extractClusterFastaLikes {
     container "soedinglab/mmseqs2"
-
     tag { type }
+    label 'mmseqs'
 
     input:
     set val(type), file(clusters), file(clusters_index) from allClusters2
@@ -311,6 +315,7 @@ with open("${fastalike}", "r") as handle:
     """
 }
 
+allClustersFasta.transpose().into{ allClustersFasta1; allClustersFasta2 }
 
 process mafft {
     container "pclust/mafft_mmseqs2"
@@ -318,13 +323,118 @@ process mafft {
     tag { type }
 
     input:
-    set val(type), file(fasta) from allClustersFasta.transpose()
+    set val(type), file(fasta) from allClustersFasta1
 
     output:
-    set val(type), file("${fasta.baseName}_msa.fasta") into mafftMsas
+    set val(type), file("${fasta.baseName}.fasta") into mafftMsas
 
     """
-    mafft --retree 2 --maxiterate 0 "${fasta}" > "${fasta.baseName}_msa.fasta"
+    mafft \
+        --amino \
+        --thread 2 \
+        --retree 2 \
+        --maxiterate 1 \
+        "${fasta}" \
+    > "${fasta.baseName}.fasta"
+    """
+}
+
+process muscle {
+    container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
+    publishDir { "msas/muscle/${type}"}
+    tag { type }
+
+    input:
+    set val(type), file(fasta) from allClustersFasta2
+
+    output:
+    set val(type), file("${fasta.baseName}.fasta") into muscleMsas
+
+    """
+    muscle \
+      -in "${fasta}" \
+      -out "${fasta.baseName}.fasta" \
+      -maxiters 2 \
+      -seqtype protein
+    """
+}
+
+/*
+ * Extract sequences from clusters.
+ */
+process mmseqs2MSA {
+    container "soedinglab/mmseqs2"
+    publishDir { "msas/mmseqs/${type}"}
+    tag { type }
+    label 'mmseqs'
+
+    input:
+    set val(type), file(clusters), file(clusters_index) from allClusters3
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
+        "sequence_h", "sequence_h.index" from sequenceDB3
+
+    output:
+    set val(type), file("msa.fastalike") into msaFastaLikes
+
+    """
+    mmseqs result2msa sequence sequence "${clusters}" msa
+    mmseqs result2flat sequence sequence msa msa.fastalike
+    """
+}
+
+/*
+ * Extract the infividual fasta sequences from the fasta-like file.
+ */
+process extractMSAFastas {
+    publishDir { "msas/mmseqs/${type}"}
+    tag { type }
+
+    input:
+    set val(type), file(fastalike) from msaFastaLikes
+
+    output:
+    set val(type), file("*.fasta") into mmseqsMsas
+
+    """
+#!/usr/bin/env python3
+
+current_name = None
+current = []
+last_was = False
+with open("${fastalike}", "r") as handle:
+    for line in handle:
+        if line.startswith(">"):
+            if last_was:
+                if len(current) > 1:
+                    with open(current_name, "w") as out_handle:
+                        print("".join(current[:-1]), file=out_handle)
+                current = []
+                current_name = line.lstrip(">").strip().split(" ", 1)[0] + ".fasta"
+            last_was = True
+        else:
+            last_was = False
+
+        current.append(line)
+    """
+}
+
+process muscleRefine {
+    container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
+    publishDir { "msas/muscle_refine/${type}"}
+    tag { type }
+
+    input:
+    set val(type), file(fasta) from mmseqsMsas.transpose()
+
+    output:
+    set val(type), file("${fasta.baseName}.fasta") into muscleRefinedMsas
+
+    """
+    muscle \
+      -in "${fasta}" \
+      -out "${fasta.baseName}.fasta" \
+      -seqtype protein \
+      -refine
     """
 }
 
