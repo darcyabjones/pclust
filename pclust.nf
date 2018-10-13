@@ -293,7 +293,7 @@ process extractClusterFastas {
     set val(type), file("*.fasta") into allClustersFasta
 
     """
-    bin/extract_fastalike.py "${fastalike}"
+    extract_fastalike.py "${fastalike}"
     """
 }
 
@@ -308,7 +308,7 @@ process mafft {
     set val(type), file(fasta) from allClustersFasta1
 
     output:
-    set val(type), file("${fasta.baseName}.fasta") into mafftMsas
+    set val(type), file("${fasta.baseName}.faa") into mafftMsas
 
     """
     mafft \
@@ -317,7 +317,7 @@ process mafft {
         --retree 2 \
         --maxiterate 1 \
         "${fasta}" \
-    > "${fasta.baseName}.fasta"
+    > "${fasta.baseName}.faa"
     """
 }
 
@@ -330,12 +330,12 @@ process muscle {
     set val(type), file(fasta) from allClustersFasta2
 
     output:
-    set val(type), file("${fasta.baseName}.fasta") into muscleMsas
+    set val(type), file("${fasta.baseName}.faa") into muscleMsas
 
     """
     muscle \
       -in "${fasta}" \
-      -out "${fasta.baseName}.fasta" \
+      -out "${fasta.baseName}.faa" \
       -maxiters 2 \
       -seqtype protein
     """
@@ -378,7 +378,7 @@ process extractMSAFastas {
     set val(type), file("*.fasta") into mmseqsMsas
 
     """
-    bin/extract_fastalike.py "${fastalike}"
+    extract_fastalike.py "${fastalike}"
     """
 }
 
@@ -391,12 +391,12 @@ process muscleRefine {
     set val(type), file(fasta) from mmseqsMsas.transpose()
 
     output:
-    set val(type), file("${fasta.baseName}.fasta") into muscleRefinedMsas
+    set val(type), file("${fasta.baseName}.faa") into muscleRefinedMsas
 
     """
     muscle \
       -in "${fasta}" \
-      -out "${fasta.baseName}.fasta" \
+      -out "${fasta.baseName}.faa" \
       -seqtype protein \
       -refine
     """
