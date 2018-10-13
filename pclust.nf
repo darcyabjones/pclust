@@ -293,25 +293,7 @@ process extractClusterFastas {
     set val(type), file("*.fasta") into allClustersFasta
 
     """
-#!/usr/bin/env python3
-
-current_name = None
-current = []
-last_was = False
-with open("${fastalike}", "r") as handle:
-    for line in handle:
-        if line.startswith(">"):
-            if last_was:
-                if len(current) > 1:
-                    with open(current_name, "w") as out_handle:
-                        print("".join(current[:-1]), file=out_handle)
-                current = []
-                current_name = line.lstrip(">").strip().split(" ", 1)[0] + ".fasta"
-            last_was = True
-        else:
-            last_was = False
-
-        current.append(line)
+    bin/extract_fastalike.py "${fastalike}"
     """
 }
 
@@ -396,25 +378,7 @@ process extractMSAFastas {
     set val(type), file("*.fasta") into mmseqsMsas
 
     """
-#!/usr/bin/env python3
-
-current_name = None
-current = []
-last_was = False
-with open("${fastalike}", "r") as handle:
-    for line in handle:
-        if line.startswith(">"):
-            if last_was:
-                if len(current) > 1:
-                    with open(current_name, "w") as out_handle:
-                        print("".join(current[:-1]), file=out_handle)
-                current = []
-                current_name = line.lstrip(">").strip().split(" ", 1)[0] + ".fasta"
-            last_was = True
-        else:
-            last_was = False
-
-        current.append(line)
+    bin/extract_fastalike.py "${fastalike}"
     """
 }
 
