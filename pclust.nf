@@ -174,6 +174,7 @@ process profileClust {
       result \
       tmp \
       -s 7.5 \
+      -c 0.60 \
       -e 0.05 \
       --add-self-matches \
       --num-iterations 3
@@ -311,13 +312,18 @@ process mafft {
     set val(type), file("${fasta.baseName}.faa") into mafftMsas
 
     """
-    mafft \
+    NSEQS=\$(grep -c ">" ${fasta})
+
+    if [ "\${NSEQS}" -lt "2" ]; then
+      cp "${fasta}" "${fasta.baseName}.faa"
+    else
+      mafft \
         --amino \
-        --thread 2 \
-        --retree 2 \
-        --maxiterate 1 \
+	--auto \
         "${fasta}" \
-    > "${fasta.baseName}.faa"
+      > "${fasta.baseName}.faa"
+    fi
+
     """
 }
 
@@ -333,11 +339,17 @@ process muscle {
     set val(type), file("${fasta.baseName}.faa") into muscleMsas
 
     """
-    muscle \
-      -in "${fasta}" \
-      -out "${fasta.baseName}.faa" \
-      -maxiters 2 \
-      -seqtype protein
+    NSEQS=\$(grep -c ">" ${fasta})
+
+    if [ "\${NSEQS}" -lt "2" ]; then
+      cp "${fasta}" "${fasta.baseName}.faa"
+    else
+      muscle \
+        -in "${fasta}" \
+        -out "${fasta.baseName}.faa" \
+        -maxiters 2 \
+        -seqtype protein
+    fi
     """
 }
 
@@ -394,11 +406,17 @@ process muscleRefine {
     set val(type), file("${fasta.baseName}.faa") into muscleRefinedMsas
 
     """
-    muscle \
-      -in "${fasta}" \
-      -out "${fasta.baseName}.faa" \
-      -seqtype protein \
-      -refine
+    NSEQS=\$(grep -c ">" ${fasta})
+
+    if [ "\${NSEQS}" -lt "2" ]; then
+      cp "${fasta}" "${fasta.baseName}.faa"
+    else
+      muscle \
+        -in "${fasta}" \
+        -out "${fasta.baseName}.faa" \
+        -seqtype protein \
+        -refine
+    fi
     """
 }
 
