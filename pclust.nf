@@ -102,7 +102,7 @@ process createSequenceDB {
 }
 
 sequenceDB.into {
-    sequenceDB1; 
+    sequenceDB1;
     sequenceDB2;
     sequenceDB3;
     sequenceDB4;
@@ -377,7 +377,7 @@ process mmseqs2MSA {
 }
 
 /*
- * Extract the infividual fasta sequences from the fasta-like file.
+ * Extract the individual fasta sequences from the fasta-like file.
  */
 process extractMSAFastas {
     publishDir { "msas/mmseqs/${type}"}
@@ -394,6 +394,11 @@ process extractMSAFastas {
     """
 }
 
+/*
+ * Refine the fast MSAs from mmseqs using muscle
+ * The issue with the regular mmseqs MSAs is that it can't have gaps in the
+ * seed sequence, muscle should refit that.
+ */
 process muscleRefine {
     container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
     publishDir { "msas/muscle_refine/${type}"}
@@ -421,13 +426,14 @@ process muscleRefine {
 }
 
 /*
-// Construct multiple sequence alignments from the clusters.
+ * Estimate trees using the MSAs
+ */
 process estimateTrees {
     container "quay.io/biocontainers/fasttree:2.1.10--h470a237_2"
     publishDir "trees"
 
     input:
-    set val(type), file(msa) from clustersMSAFastaIndiv.transpose()
+    set val(type), file(msa) from muscleRefinedMsas
 
     output:
     file "${msa.baseName}.nwk" into indivTrees
@@ -436,5 +442,3 @@ process estimateTrees {
     fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
     """
 }
-*/
-
