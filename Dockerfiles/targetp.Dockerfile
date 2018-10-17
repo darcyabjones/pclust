@@ -1,7 +1,7 @@
 FROM alpine:3.8
 MAINTAINER Darcy Jones <darcy.ab.jones@gmail.com>
 
-RUN apk add --no-cache gawk perl
+RUN apk add --no-cache gawk perl bash
 
 WORKDIR /opt
 
@@ -11,7 +11,8 @@ ENV SIGNALP_PREFIX="/opt/signalp"
 RUN  tar xf signalp-3.0.Linux.tar.Z \
   && rm signalp-3.0.Linux.tar.Z \
   && mv signalp-3.0 ${SIGNALP_PREFIX} \
-  && sed -i s~SIGNALP=/usr/opt/signalp-3.0~SIGNALP=${SIGNALP_PREFIX}~ ${SIGNALP_PREFIX}/signalp
+  && sed -i s~SIGNALP=/usr/opt/signalp-3.0~SIGNALP=${SIGNALP_PREFIX}~ ${SIGNALP_PREFIX}/signalp \
+  && sed -i s~AWK=/usr/bin/gawk~AWK="$(which gawk)"~ ${SIGNALP_PREFIX}/signalp
 
 
 COPY chlorop-1.1.Linux.tar.Z /opt/chlorop-1.1.Linux.tar.Z
@@ -30,8 +31,10 @@ RUN  tar xf targetp-1.1b.Linux.tar.Z \
   && rm targetp-1.1b.Linux.tar.Z \
   && mv targetp-1.1 ${TARGETP_PREFIX} \
   && sed -i s~/usr/cbs/packages/targetp/currdist/targetp-1.1~${TARGETP_PREFIX}~ ${TARGETP_PREFIX}/targetp \
+  && mkdir -p /tmp \
   && sed -i s~/scratch~/tmp~ ${TARGETP_PREFIX}/targetp \
-  && sed -i s~/usr/bin/perl~perl~ ${TARGETP_PREFIX}/targetp \
+  && sed -i s~/usr/bin/perl~$(which perl)~ ${TARGETP_PREFIX}/targetp \
+  && sed -i s~AWK=/usr/freeware/bin/gawk~AWK="$(which gawk)"~ ${TARGETP_PREFIX}/targetp \
   && sed -i s~/usr/cbs/bio/bin/chlorop~${CHLOROP_PREFIX}/chlorop~ ${TARGETP_PREFIX}/targetp \
   && sed -i s~/usr/cbs/bio/bin/signalp~${SIGNALP_PREFIX}/signalp~ ${TARGETP_PREFIX}/targetp
 

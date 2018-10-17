@@ -1,7 +1,7 @@
 FROM alpine:3.8
 MAINTAINER Darcy Jones <darcy.ab.jones@gmail.com>
 
-RUN apk add --no-cache perl
+RUN apk add --no-cache perl bash
 
 WORKDIR /opt
 COPY signalp-4.1f.Linux.tar.gz /opt/signalp-4.1f.Linux.tar.gz
