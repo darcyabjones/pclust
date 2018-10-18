@@ -5,77 +5,27 @@ vim: syntax=groovy
 -*- mode: groovy;-*-
 */
 
-params.seqdb = "$baseDir/clusters/sequence"
-seqdb = file(params.seqdb)
-seqdbtype = file("${params.seqdb}.dbtype")
-seqdbindex = file("${params.seqdb}.index")
-seqdblookup = file("${params.seqdb}.lookup")
-seqdbh = file("${params.seqdb}_h")
-seqdbhindex = file("${params.seqdb}_h.index")
+params.seqs = "$baseDir/dedup/dedup.fasta"
+seqs = file(params.seqs)
 
-sequenceDB = Channel.create()
-sequenceDB << [seqdb, seqdbtype, seqdbindex, seqdblookup, seqdbh, seqdbhindex]
-sequenceDB.close()
 
-sequenceDB.into {
-    sequenceDB1;
-    sequenceDB2;
-    sequenceDB3;
-    sequenceDB4
-}
-
-process getUniqueSequences {
-    container "soedinglab/mmseqs2"
-
-    input:
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index" from sequenceDB1
-
-    output:
-    file "unique.tsv" into uniqueProteinsTsv
-    file "unique.fasta" into uniqueProteins
-
-    """
-    mkdir -p tmp
-    mmseqs linclust sequence unique tmp --min-seq-id 1.0 -c 1.0
-
-    mmseqs createtsv \
-      sequence \
-      sequence \
-      unique \
-      unique.tsv
-
-    mmseqs result2repseq \
-      sequence \
-      unique \
-      unique_rep
-
-    mmseqs result2flat \
-      sequence \
-      sequence \
-      unique_rep \
-      unique_rep.fasta \
-      --use-fasta-header
-
-    mv unique_rep.fasta unique.fasta
-    """
-}
-
-uniqueProteins.splitFasta(by: 500).into {
-    uniqueProteins1;
-    uniqueProteins2;
-    uniqueProteins3;
-    uniqueProteins4;
-    uniqueProteins5;
-    uniqueProteins6;
-    uniqueProteins7
+seqs.tap {seqs4Targetp}
+    .splitFasta(by: 500)
+    .into {
+        seqs4Effectorp;
+        seqs4Signalp3;
+        seqs4Signalp4;
+        seqs4Tmhmm;
+        seqs4Phobius;
+        seqs4Apoplastp;
+        seqs4LocalizerPlant;
     }
 
 process effectorp {
     container "pclust/sperschneider"
 
     input:
-    file fasta from uniqueProteins1
+    file fasta from seqs4Effectorp
 
     output:
     file "${fasta}.tsv" into effectorpChunkedResults
@@ -96,7 +46,10 @@ process gatherEffectorp {
 
     """
     echo "seqid\teffector\tprobability" > effectorp.tsv
-    cat tables* | grep -v "#" >> effectorp.tsv
+    cat tables* \
+    | grep -v "#" \
+    | awk -F'\t' 'OFS="\t" { sub(/[[:space:]].*/, "", \$1); print \$1, \$2, \$3}' \
+    >> effectorp.tsv
     """
 }
 
@@ -104,7 +57,7 @@ process signalp3 {
     container "pclust/signalp3"
 
     input:
-    file fasta from uniqueProteins2
+    file fasta from seqs4Signalp3
 
     output:
     file "${fasta}.tsv" into signalp3ChunkedResults
@@ -133,11 +86,11 @@ process signalp4 {
     container "pclust/signalp4"
 
     input:
-    file fasta from uniqueProteins3
+    file fasta from seqs4Signalp4
 
     output:
     file "${fasta}.tsv" into signalp4ChunkedResults
-    file "${fasta}_mature.fasta" into signalp4MatureProteins
+    file "${fasta}_mature.fasta" into matureProteins
 
     """
     signalp -t euk -f short -m "${fasta}_mature.fasta" "${fasta}" > "${fasta}.tsv"
@@ -163,7 +116,7 @@ process tmhmm {
     container "pclust/tmhmm"
 
     input:
-    file fasta from uniqueProteins4
+    file fasta from seqs4Tmhmm
 
     output:
     file "${fasta}.tsv" into tmhmmChunkedResults
@@ -192,11 +145,18 @@ process gatherTmhmm {
     """
 }
 
+seqs4Targetp
+   .splitFasta(by: 100)
+   .into {
+       seqs4Targetp1;
+       seqs4Targetp2;
+   }
+
 process targetp {
     container "pclust/targetp"
 
     input:
-    file fasta from uniqueProteins5
+    file fasta from seqs4Targetp1
 
     output:
     file "${fasta}.tsv" into targetpChunkedResults
@@ -225,7 +185,7 @@ process targetpPlant {
     container "pclust/targetp"
 
     input:
-    file fasta from uniqueProteins6
+    file fasta from seqs4Targetp2
 
     output:
     file "${fasta}.tsv" into targetpPlantChunkedResults
@@ -254,13 +214,13 @@ process phobius {
     container "pclust/phobius"
 
     input:
-    file fasta from uniqueProteins7
+    file fasta from seqs4Phobius
 
     output:
     file "${fasta}.tsv" into phobiusChunkedResults
 
     """
-    sed 's/\\*\$//g' ${fasta} | phobius -short | tail -n+2 > "${fasta}.tsv"
+    sed 's/\\*\$//g' "${fasta}" | phobius -short | tail -n+2 > "${fasta}.tsv"
     """
 }
 
@@ -279,28 +239,102 @@ process gatherPhobius {
     """
 }
 
-/*
+process apoplastp {
+    container "pclust/sperschneider"
 
-// Cluster a third time with HMMs.
-
-process hmms {
-    container "pclust/hhblits_mmseqs2"
-    
     input:
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  from sequenceDB3
-    set "profile_clusters", "profile_clusters.index" from profileClustDB1
+    file fasta from seqs4Apoplastp
 
     output:
-    file "profile_clusters_hmms" into profileClustHMMs
-    
+    file "${fasta}.tsv" into apoplastpChunkedResults
+
     """
-    mmseqs result2msa sequence sequence profile_clusters profile_clusters_msa --compress
-    ln -s sequence_h profile_clusters_msa_header.ffdata
-    ln -s sequence_h.index profile_clusters_msa_header.ffindex
-    ln -s sequence profile_clusters_msa_sequence.ffdata
-    ln -s sequence.index profile_clusters_msa_sequence.ffindex
-    mpirun -np 2 cstranslate_mpi -i profile_clusters_msa -o profile_clusters_hmms -A /opt/hh-suite/data/cs219.lib -D /opt/hh-suite/data/context_data.lib -x 0.3 -c 4 -I ca3m
+    ApoplastP.py -s -i "${fasta}" -o "${fasta}.tsv"
     """
 }
 
-*/
+process gatherApoplastp {
+    publishDir "annotations"
+
+    input:
+    file "tables" from apoplastpChunkedResults.collect()
+
+    output:
+    file "apoplastp.tsv" into apoplastpResults
+
+    """
+    echo "seqid\tprediction\tprobability" > apoplastp.tsv
+    cat tables* \
+    | grep -v "#" \
+    | awk -F'\t' 'OFS="\t" { sub(/[[:space:]].*/, "", \$1); print \$1, \$2, \$3}' \
+    >> apoplastp.tsv
+    """
+}
+
+process localizerEffector {
+    container "pclust/sperschneider"
+
+    input:
+    file fasta from matureProteins
+
+    output:
+    file "${fasta}.tsv" into localizerEffectorChunkedResults
+
+    """
+    LOCALIZER.py -e -M -i "${fasta}" -o results
+    grep -v "^#" results/Results.txt 
+    | tail -n+2 \
+    | sed '/^\\s*\$/d' \
+    | awk -F'\t' 'OFS="\t" { sub(/[[:space:]].*/, "", \$1); print \$1, \$2, \$3, \$4}' \
+    > "${fasta}.tsv"
+    """
+}
+
+process gatherLocalizerEffector {
+    publishDir "annotations"
+
+    input:
+    file "tables" from localizerEffectorChunkedResults.collect()
+
+    output:
+    file "localizer_effector.tsv" into localizerEffectorResults
+
+    """
+    echo "seqid\tchloroplast\tmitochondria\tnucleus" > localizer_effector.tsv
+    cat tables* >> localizer_effector.tsv
+    """
+}
+
+process localizerPlant {
+    container "pclust/sperschneider"
+
+    input:
+    file fasta from seqs4LocalizerPlant
+
+    output:
+    file "${fasta}.tsv" into localizerPlantChunkedResults
+
+    """
+    LOCALIZER.py -p -i "${fasta}" -o results
+    grep -v "^#" results/Results.txt 
+    | tail -n+2 \
+    | sed '/^\\s*\$/d' \
+    | awk -F'\t' 'OFS="\t" { sub(/[[:space:]].*/, "", \$1); print \$1, \$2, \$3, \$4}' \
+    > "${fasta}.tsv"
+    """
+}
+
+process gatherLocalizerPlant {
+    publishDir "annotations"
+
+    input:
+    file "tables" from localizerPlantChunkedResults.collect()
+
+    output:
+    file "localizer_plant.tsv" into localizerPlantResults
+
+    """
+    echo "seqid\tchloroplast\tmitochondria\tnucleus" > localizer_plant.tsv
+    cat tables* >> localizer_plant.tsv
+    """
+}

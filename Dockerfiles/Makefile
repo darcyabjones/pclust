@@ -3,8 +3,8 @@ all: mafft_mmseqs2 hhblits_mmseqs2 sperschneider signalp3 signalp4 targetp tmhmm
 mafft_mmseqs2: mafft_mmseqs2.Dockerfile
 	docker build --file mafft_mmseqs2.Dockerfile -t pclust/mafft_mmseqs2 .
 
-hhblits_mmseqs2: hhblits_mmseqs2.Dockerfile
-	docker build --file hhblits_mmseqs2.Dockerfile -t pclust/hhblits_mmseqs2 .
+hhblits_mmseqs2: hhblits.Dockerfile
+	docker build --file hhblits.Dockerfile -t pclust/hhblits .
 
 sperschneider: sperschneider.Dockerfile
 	docker build --file sperschneider.Dockerfile -t pclust/sperschneider .

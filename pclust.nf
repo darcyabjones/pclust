@@ -62,22 +62,21 @@ process extractProteins {
     """
 }
 
-proteins.into { proteins1; proteins2 }
-
 
 /*
  * Combine all proteins into a single fasta file.
  */
 process combineFasta {
+    publishDir "sequences"
 
     input:
-    file "*.fa*" from proteins1.collect()
+    file "*.faa" from proteins.collect()
 
     output:
     file "combined.faa" into combinedFasta
 
     """
-    cat *.fa* > combined.faa
+    cat *faa > combined.faa
     """
 }
 
@@ -87,83 +86,127 @@ process combineFasta {
  */
 process createSequenceDB {
     container "soedinglab/mmseqs2"
-    publishDir "clusters"
     label 'mmseqs'
+    publishDir "sequences"
 
     input:
     file fasta from combinedFasta
 
     output:
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup", "sequence_h", "sequence_h.index"  into sequenceDB
+    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
+        "sequence_h", "sequence_h.index" into seq
 
     """
     mmseqs createdb "${fasta}" sequence --max-seq-len 14000
     """
 }
 
-sequenceDB.into {
-    sequenceDB1;
-    sequenceDB2;
-    sequenceDB3;
-    sequenceDB4;
-    sequenceDB5;
-    sequenceDB6;
-    sequenceDB7
-    }
+seq.into {
+    seq4Dedup
+}
 
-
-/*
- * Do the first clustering pass.
- * This tends to get clusters down to approximately 50% identity.
- */
-process clust {
+process getDedupSequences {
     container "soedinglab/mmseqs2"
-    publishDir "clusters"
     label 'mmseqs'
+    publishDir "dedup"
 
     input:
     set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-         "sequence_h", "sequence_h.index"  from sequenceDB1
+        "sequence_h", "sequence_h.index" from seq4Dedup
 
     output:
-    set "clusters", "clusters.index" into clustDB
+    file "dedup.fasta" into dedupSeqFasta
+    file "dedup.tsv" into dedupCluTSV
+
+    """
+    mmseqs clusthash sequence result --min-seq-id 1.0
+    mmseqs clust sequence result dedup_clu
+
+    mmseqs result2repseq sequence dedup_clu dedup_rep
+    mmseqs result2flat sequence sequence dedup_rep dedup.fasta --use-fasta-header
+
+    mmseqs createtsv sequence sequence dedup_clu dedup.tsv
+    """
+}
+
+/*
+ * Create the mmseqs2 sequence database
+ */
+process createDedupDB {
+    container "soedinglab/mmseqs2"
+    label 'mmseqs'
+    publishDir "dedup"
+
+    input:
+    file fasta from dedupSeqFasta
+
+    output:
+    set "dedup", "dedup.dbtype", "dedup.index", "dedup.lookup",
+        "dedup_h", "dedup_h.index" into dedupSeq
+
+    """
+    mmseqs createdb "${fasta}" dedup --max-seq-len 14000
+    """
+}
+
+dedupSeq.into {
+    dedupSeq4Cascade;
+    dedupSeq4Profile;
+    dedupSeq4Stats;
+    dedupSeq4MmseqsMSA;
+}
+
+
+process clusterCascade {
+    container "soedinglab/mmseqs2"
+    label 'mmseqs'
+    publishDir "clusters"
+
+    input:
+    set "dedup", "dedup.dbtype", "dedup.index", "dedup.lookup",
+        "dedup_h", "dedup_h.index" from dedupSeq4Cascade
+
+    output:
+    set "cascade_clusters", "cascade_clusters.index" into cascadeClu
 
     """
     mkdir -p tmp
-    mmseqs cluster sequence clusters tmp -s 5 --cluster-steps 5 --min-seq-id 0.3
+    mmseqs cluster \
+      dedup \
+      cascade_clusters \
+      tmp \
+      -s 5 \
+      --cluster-steps 5 \
+      --min-seq-id 0.3
     """
 }
 
-clustDB.into {
-    clustDB1;
-    clustDB2;
-    clustDB3;
-    clustDB4;
-    clustDB5
+cascadeClu.into {
+    cascadeClu4Profile;
+    cascadeClu4Combine;
 }
-
 
 /*
  * Perform the second clustering pass using sequence profiles.
  * This gets clusters down to about 10%-20% identity.
  */
-process profileClust {
+process clusterProfile {
     container "soedinglab/mmseqs2"
-    publishDir "clusters"
     label 'mmseqs'
+    publishDir "clusters"
 
     input:
-    set "clusters", "clusters.index" from clustDB1
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index"  from sequenceDB2
+    set "cascade_clusters", "cascade_clusters.index" from cascadeClu4Profile
+    set "dedup", "dedup.dbtype", "dedup.index", "dedup.lookup",
+        "dedup_h", "dedup_h.index" from dedupSeq4Profile
 
     output:
-    set "profile_clusters", "profile_clusters.index" into profileClustDB
+    set "profile_clusters", "profile_clusters.index" into profileClu
 
     """
     # Create profiles for each cluster.
     # Generates the profile_consensus file too.
-    mmseqs result2profile sequence sequence clusters profile
+    mmseqs result2profile dedup dedup cascade_clusters profile
 
     # Search the profiles against the profile consensus sequences.
     # Uses an iterative strategy.
@@ -184,210 +227,99 @@ process profileClust {
 
     # Merge the original clusters with the new ones to get all sequences back.
     mmseqs mergeclusters \
-      sequence \
+      dedup \
       profile_clusters \
-      clusters \
+      cascade_clusters \
       profile_clusters_consensus
     """
 }
 
-profileClustDB.into { profileClustDB1; profileClustDB2 }
-
+profileClu.into {
+    profileClu4Combine;
+    profileClu4MSA;
+}
 
 /*
  * Merge the two clustering results into a single channel that we can look at.
  */
-allClusters = Channel
-    .value("identity")
-    .combine(clustDB2)
-    .concat(
-        Channel.value("profile").combine( profileClustDB2 )
-    )
-
-allClusters.into { allClusters1; allClusters2; allClusters3 }
-
-
+combinedClu = cascadeClu4Combine.concat(profileClu4Combine)
+    
 /*
  * Extract information about each cluster.
  * E.G. cluster members, representative sequences, alignment statistics.
  */
 process extractClusterStats {
     container "soedinglab/mmseqs2"
-    publishDir { "clusters/${type}" }
-    tag { type }
     label 'mmseqs'
+    publishDir { "clusters" }
 
     input:
-    set val(type), file(clusters), file(clusters_index) from allClusters1
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index" from sequenceDB4
+    set file(clusters), file(clusters_index) from combinedClu
+    set "dedup", "dedup.dbtype", "dedup.index", "dedup.lookup",
+        "dedup_h", "dedup_h.index" from dedupSeq4Stats
 
     output:
-    file "${clusters}.tsv" into clustersTSV
-    file "${clusters}_rep.fasta" into clustersRepFasta
-    file "${clusters}_stats.tsv" into clustersStats
+    file "${clusters}.tsv" into combinedCluTSV
+    file "${clusters}_rep.fasta" into combinedCluRepFasta
+    file "${clusters}_stats.tsv" into combinedCluStats
 
     """
     mmseqs createtsv \
-      sequence \
-      sequence \
+      dedup \
+      dedup \
       "${clusters}" \
       "${clusters}.tsv"
 
     mmseqs result2repseq \
-      sequence \
+      dedup \
       "${clusters}" \
       "${clusters}_rep"
 
     mmseqs result2flat \
-      sequence \
-      sequence \
+      dedup \
+      dedup \
       "${clusters}_rep" \
       "${clusters}_rep.fasta" \
       --use-fasta-header
 
     # Do an all vs centroid alignment for each cluster.
-    mmseqs align sequence sequence "${clusters}" align -a
-    mmseqs convertalis sequence sequence align "${clusters}_stats.tsv"
-    """
-}
-
-
-/*
- * Extract sequences from clusters.
- */
-process extractClusterFastaLikes {
-    container "soedinglab/mmseqs2"
-    tag { type }
-    label 'mmseqs'
-
-    input:
-    set val(type), file(clusters), file(clusters_index) from allClusters2
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index" from sequenceDB5
-
-    output:
-    set val(type), file("${clusters}_sequences.fastalike") into allClustersFastaLikes
-
-    """
-    mmseqs createseqfiledb sequence "${clusters}" "${clusters}_sequences"
-    mmseqs result2flat \
-        sequence \
-        sequence \
-        "${clusters}_sequences" \
-        "${clusters}_sequences.fastalike"
-    """
-}
-
-
-/*
- * Extract the infividual fasta sequences from the fasta-like file.
- */
-process extractClusterFastas {
-
-    tag { type }
-
-    input:
-    set val(type), file(fastalike) from allClustersFastaLikes
-
-    output:
-    set val(type), file("*.fasta") into allClustersFasta
-
-    """
-    extract_fastalike.py "${fastalike}"
-    """
-}
-
-allClustersFasta.transpose().into{ allClustersFasta1; allClustersFasta2 }
-
-process mafft {
-    container "pclust/mafft_mmseqs2"
-    publishDir { "msas/mafft/${type}"}
-    tag { type }
-
-    input:
-    set val(type), file(fasta) from allClustersFasta1
-
-    output:
-    set val(type), file("${fasta.baseName}.faa") into mafftMsas
-
-    """
-    NSEQS=\$(grep -c ">" ${fasta})
-
-    if [ "\${NSEQS}" -lt "2" ]; then
-      cp "${fasta}" "${fasta.baseName}.faa"
-    else
-      mafft \
-        --amino \
-	--auto \
-        "${fasta}" \
-      > "${fasta.baseName}.faa"
-    fi
-
-    """
-}
-
-process muscle {
-    container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
-    publishDir { "msas/muscle/${type}"}
-    tag { type }
-
-    input:
-    set val(type), file(fasta) from allClustersFasta2
-
-    output:
-    set val(type), file("${fasta.baseName}.faa") into muscleMsas
-
-    """
-    NSEQS=\$(grep -c ">" ${fasta})
-
-    if [ "\${NSEQS}" -lt "2" ]; then
-      cp "${fasta}" "${fasta.baseName}.faa"
-    else
-      muscle \
-        -in "${fasta}" \
-        -out "${fasta.baseName}.faa" \
-        -maxiters 2 \
-        -seqtype protein
-    fi
+    mmseqs align dedup dedup "${clusters}" align -a
+    mmseqs convertalis dedup dedup align "${clusters}_stats.tsv"
     """
 }
 
 /*
  * Extract sequences from clusters.
  */
-process mmseqs2MSA {
+process getMmseqsMSA {
     container "soedinglab/mmseqs2"
-    publishDir { "msas/mmseqs/${type}"}
-    tag { type }
     label 'mmseqs'
 
     input:
-    set val(type), file(clusters), file(clusters_index) from allClusters3
-    set "sequence", "sequence.dbtype", "sequence.index", "sequence.lookup",
-        "sequence_h", "sequence_h.index" from sequenceDB3
+    set file(clusters), file(clusters_index) from profileClu4MSA
+    set "dedup", "dedup.dbtype", "dedup.index", "dedup.lookup",
+        "dedup_h", "dedup_h.index" from dedupSeq4MmseqsMSA
 
     output:
-    set val(type), file("msa.fastalike") into msaFastaLikes
+    file "msa.fastalike" into msaFastaLike
 
     """
-    mmseqs result2msa sequence sequence "${clusters}" msa
-    mmseqs result2flat sequence sequence msa msa.fastalike
+    mmseqs result2msa dedup dedup "${clusters}" msa
+    mmseqs result2flat dedup dedup msa msa.fastalike
     """
 }
 
 /*
  * Extract the individual fasta sequences from the fasta-like file.
  */
-process extractMSAFastas {
-    publishDir { "msas/mmseqs/${type}"}
-    tag { type }
+process getMmseqsMSAFastas {
+    publishDir "msas/mmseqs"
 
     input:
-    set val(type), file(fastalike) from msaFastaLikes
+    file fastalike from msaFastaLike
 
     output:
-    set val(type), file("*.fasta") into mmseqsMsas
+    file "*.fasta" into mmseqsMsas
 
     """
     extract_fastalike.py "${fastalike}"
@@ -399,16 +331,15 @@ process extractMSAFastas {
  * The issue with the regular mmseqs MSAs is that it can't have gaps in the
  * seed sequence, muscle should refit that.
  */
-process muscleRefine {
+process refineMSAs {
     container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
-    publishDir { "msas/muscle_refine/${type}"}
-    tag { type }
+    publishDir { "msas/muscle_refine"}
 
     input:
-    set val(type), file(fasta) from mmseqsMsas.transpose()
+    file fasta from mmseqsMsas.flatten()
 
     output:
-    set val(type), file("${fasta.baseName}.faa") into muscleRefinedMsas
+    file "${fasta.baseName}.faa" into refinedMsas
 
     """
     NSEQS=\$(grep -c ">" ${fasta})
@@ -427,13 +358,12 @@ process muscleRefine {
 
 /*
  * Estimate trees using the MSAs
- */
 process estimateTrees {
     container "quay.io/biocontainers/fasttree:2.1.10--h470a237_2"
     publishDir "trees"
 
     input:
-    set val(type), file(msa) from muscleRefinedMsas
+    file msa from refinedMsas
 
     output:
     file "${msa.baseName}.nwk" into indivTrees
@@ -442,3 +372,4 @@ process estimateTrees {
     fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
     """
 }
+*/
