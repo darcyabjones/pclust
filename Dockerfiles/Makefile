@@ -1,14 +1,10 @@
-all: mafft_mmseqs2 hhblits_mmseqs2 sperschneider signalp3 signalp4 targetp tmhmm phobius
+all: mmseqs2 sperschneider signalp3 signalp4 targetp tmhmm phobius
 
-mafft_mmseqs2: mafft_mmseqs2.Dockerfile
-	docker build --file mafft_mmseqs2.Dockerfile -t pclust/mafft_mmseqs2 .
-
-hhblits_mmseqs2: hhblits.Dockerfile
+hhblits: hhblits.Dockerfile
 	docker build --file hhblits.Dockerfile -t pclust/hhblits .
 
 sperschneider: sperschneider.Dockerfile
 	docker build --file sperschneider.Dockerfile -t pclust/sperschneider .
-
 
 signalp3: signalp3.Dockerfile signalp-3.0.Linux.tar.Z
 	docker build --file signalp3.Dockerfile -t pclust/signalp3 .
