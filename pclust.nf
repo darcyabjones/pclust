@@ -34,7 +34,7 @@ if (params.help){
 
 params.genomes = "$baseDir/data/*.{fasta,gff3}"
 genomes = Channel.fromFilePairs( params.genomes, flat: true )
-genomes.tap { genomes1 }
+genomes.tap { genomes4proteindb; genomes4genomedb }
 
 
 /*
@@ -44,7 +44,7 @@ process extractProteins {
     container "quay.io/biocontainers/genometools-genometools:1.5.10--h470a237_1"
 
     input:
-    set val(label), file(fasta), file(gff) from genomes1
+    set val(label), file(fasta), file(gff) from genomes4proteindb
 
     output:
     file "${label}.faa" into proteins
@@ -154,6 +154,7 @@ dedupSeq.into {
     dedupSeq4Profile;
     dedupSeq4Stats;
     dedupSeq4MmseqsMSA;
+    dedupSeq4GenomeSearch;
 }
 
 
@@ -237,6 +238,7 @@ process clusterProfile {
 profileClu.into {
     profileClu4Combine;
     profileClu4MSA;
+    profileClu4GenomeSearch;
 }
 
 /*
@@ -330,7 +332,6 @@ process getMmseqsMSAFastas {
  * Refine the fast MSAs from mmseqs using muscle
  * The issue with the regular mmseqs MSAs is that it can't have gaps in the
  * seed sequence, muscle should refit that.
- */
 process refineMSAs {
     container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
     publishDir { "msas/muscle_refine"}
@@ -354,6 +355,70 @@ process refineMSAs {
         -refine
     fi
     """
+}
+ */
+
+/*
+ * Combine all genomes into a single fasta file.
+ */
+process combineGenomeFasta {
+
+    input:
+    file "*.fasta" from genomes4genomedb.map {l, f, g -> f}.collect()
+
+    output:
+    file "combined.fasta" into combinedGenomeFasta
+
+    """
+    cat *fasta > combined.fasta
+    """
+}
+
+
+/*
+ * Construct genomes database
+ */
+process createGenomeSequenceDB {
+    container "soedinglab/mmseqs2"
+    label 'mmseqs'
+
+    input:
+    file fasta from combinedGenomeFasta
+
+    output:
+    set "genome", "genome.dbtype", "genome.index", "genome.lookup",
+        "genome_h", "genome_h.index" into genomeSeq
+
+    """
+    mmseqs createdb "${fasta}" genome --dont-split-seq-by-len
+    """
+}
+
+process searchGenomes {
+    container "soedinglab/mmseqs2"
+    label 'mmseqs'
+    publishDir "genome_search"
+
+    input:
+    set file(clusters), file(clusters_index) from profileClu4GenomeSearch
+    set "genome", "genome.dbtype", "genome.index", "genome.lookup",
+        "genome_h", "genome_h.index" from genomeSeq
+    set "dedup", "dedup.dbtype", "dedup.index", "dedup.lookup",
+        "dedup_h", "dedup_h.index" from dedupSeq4GenomeSearch
+
+    output:
+    file "result.tsv" into searchResults
+
+    """
+    mkdir -p tmp
+    # Create profiles for each cluster.
+    mmseqs result2profile dedup dedup "${clusters}" profile
+    # Search profile vs genome
+    mmseqs search profile genome result tmp
+    # Extract matches from results
+    mmseqs convertalis profile genome result result.tsv
+    """
+
 }
 
 /*
