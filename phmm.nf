@@ -12,7 +12,7 @@ params.dssp = false
 params.pdb = false
 params.hhpdb = false
 params.hhscop = false
-params.hhuniclust = false
+params.hhuniref = false
 params.hhpfam = false
 
 
@@ -74,6 +74,8 @@ if ( !params.hhuniref ) {
         cd hhuniref
         wget -c http://wwwuser.gwdg.de/~compbiol/uniclust/2018_08/uniclust30_2018_08_hhsuite.tar.gz
         tar -zxf uniclust30_2018_08_hhsuite.tar.gz
+        mv uniclust30_2018_08/* ./
+        rm -rf -- uniref
         """
     }
 } else if ( file(params.hhuniref).exists() ) {
@@ -170,7 +172,7 @@ process enrichMsas {
       -M 50 \
       -mact 0.3 \
       -n 2 \
-      -d "${db}/uniclust"
+      -d "${db}/uniclust30_2018_08"
     """
 }
 
