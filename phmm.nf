@@ -150,29 +150,166 @@ if ( !params.hhpfam ) {
     exit 1, "You specified a hhblits formatted pfam database, but it doesn't exist."
 }
 
-
 process enrichMsas {
-    container "pclust/hhblits"
+    //container "pclust/hhblits"
+    label "hhblits"
+    cpus 4
+    publishDir "enriched_msas"
 
     input:
     file msa from msas
     file db from hhunirefDatabase
 
     output:
-    file "${msa.baseName}.a3m" into hmms
+    set file("${msa.baseName}.hhr"), file("${msa.baseName}.a3m"), file("${msa.baseName}.hhm"), file("${msa.baseName}.tsv") into hmms
 
     """
+    NSEQS=\$(grep -c "^>" "${msa}")
+    if [ "\${NSEQS}" -eq "1" ]; then
+      MOPT="-M first"
+    else
+      MOPT="-M 50"
+    fi
+
     hhblits \
       -i "${msa}" \
-      -o "${msa}.hhr" \
+      -o "${msa.baseName}.hhr" \
       -oa3m "${msa.baseName}.a3m" \
       -ohhm "${msa.baseName}.hhm" \
+      -atab "${msa.baseName}.tsv" \
       -id 90 \
       -cov 60 \
-      -M 50 \
-      -mact 0.3 \
-      -n 2 \
+      \${MOPT} \
+      -mact 0.4 \
+      -cpu 4 \
       -d "${db}/uniclust30_2018_08"
     """
 }
 
+
+hmms.into { hmms4database; hmms4search; hmms4pfam; hmms4scop; hmms4pdb }
+
+process buildHmmDatabase {
+    label "hhblits"
+    cpus 4
+    publishDir "hmm_database"
+
+    input:
+    file "*.a3m" from hmms4database.map { hhr, a3m, hhm, tsv -> a3m }.collect()
+
+    output:
+    file "hmm" into hmmDatabase
+
+    """
+    mkdir -p hmm
+    hhsuitedb.py \
+      --ia3m *.a3m \
+      -o hmm/db \
+      --cpu 4
+    """
+}
+
+process searchHmmClusters {
+    label "hhblits"
+    cpus 4
+    publishDir "hmm_search_vs_clusters"
+
+    input:
+    file msa from hmms4search.map { hhr, a3m, hhm, tsv -> a3m }
+    file "hmm" from hmmDatabase
+
+    output:
+    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into clusterHmmMatches
+
+    """
+    hhsearch \
+      -i "${msa}" \
+      -o "${msa.baseName}_match.hhr" \
+      -oa3m "${msa.baseName}_match.a3m" \
+      -atab "${msa.baseName}_match.tsv" \
+      -M a2m \
+      -all \
+      -mact 0.4 \
+      -cpu 4 \
+      -d "hmm/db"
+    """
+}
+
+
+process searchPfam {
+    label "hhblits"
+    cpus 4
+    publishDir "hmm_search_vs_pfam"
+
+    input:
+    file msa from hmms4pfam.map { hhr, a3m, hhm, tsv -> a3m }
+    file "hhpfam" from hhpfamDatabase
+
+    output:
+    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into pfamHmmMatches
+
+    """
+    hhsearch \
+      -i "${msa}" \
+      -o "${msa.baseName}_match.hhr" \
+      -oa3m "${msa.baseName}_match.a3m" \
+      -atab "${msa.baseName}_match.tsv" \
+      -M a2m \
+      -all \
+      -mact 0.4 \
+      -cpu 4 \
+      -d "hhpfam/pfam"
+    """
+}
+
+process searchScop {
+    label "hhblits"
+    cpus 4
+    publishDir "hmm_search_vs_scop"
+
+    input:
+    file msa from hmms4scop.map { hhr, a3m, hhm, tsv -> a3m }
+    file "hhscop" from hhscopDatabase
+
+    output:
+    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into scopHmmMatches
+
+    """
+    hhsearch \
+      -i "${msa}" \
+      -o "${msa.baseName}_match.hhr" \
+      -oa3m "${msa.baseName}_match.a3m" \
+      -atab "${msa.baseName}_match.tsv" \
+      -M a2m \
+      -all \
+      -mact 0.4 \
+      -cpu 4 \
+      -d "hhscop/scop90"
+    """
+}
+
+process searchPdb {
+    label "hhblits"
+    cpus 4
+    publishDir "hmm_search_vs_pdb"
+
+    input:
+    file msa from hmms4pdb.map { hhr, a3m, hhm, tsv -> a3m }
+    file "hhpdb" from hhpdbDatabase
+
+    output:
+    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into pdbHmmMatches
+
+    """
+    hhsearch \
+      -i "${msa}" \
+      -o "${msa.baseName}_match.hhr" \
+      -oa3m "${msa.baseName}_match.a3m" \
+      -atab "${msa.baseName}_match.tsv" \
+      -M a2m \
+      -all \
+      -mact 0.4 \
+      -cpu 4 \
+      -d "hhpdb/pdb70"
+    """
+}

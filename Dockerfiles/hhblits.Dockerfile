@@ -32,7 +32,7 @@ ENV PATH=${PATH}:${MPICH_PREFIX}/bin
 ENV LIBRARY_PATH=${LD_LIBRARY_PATH}:${MPICH_PREFIX}/lib
 ENV CPATH=${CPATH}:${MPICH_PREFIX}/include
 
-RUN apk add --no-cache build-base cmake musl-dev git ninja
+RUN apk add --no-cache build-base cmake git ninja
 
 WORKDIR /opt/hh-suite
 RUN  git clone https://github.com/soedinglab/hh-suite.git . \
@@ -46,7 +46,6 @@ RUN git checkout master
 WORKDIR /opt/hh-suite/build
 RUN cmake \
       -G Ninja \
-      -DHAVE_SSE2=1 \
       -DHAVE_MPI=1 \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=/opt/hh-suite ..
@@ -60,7 +59,7 @@ FROM alpine:3.8
 
 MAINTAINER Darcy Jones <darcy.ab.jones@gmail.com>
 
-RUN apk add --no-cache bash grep libstdc++ libgomp python perl
+RUN apk add --no-cache bash grep libstdc++ musl-dev libgomp python perl
 
 # Include MPICH
 COPY --from=mpibuilder /opt/mpich /opt/mpich

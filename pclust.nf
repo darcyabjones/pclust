@@ -332,6 +332,7 @@ process getMmseqsMSAFastas {
  * Refine the fast MSAs from mmseqs using muscle
  * The issue with the regular mmseqs MSAs is that it can't have gaps in the
  * seed sequence, muscle should refit that.
+ */
 process refineMSAs {
     container "quay.io/biocontainers/muscle:3.8.1551--h2d50403_3"
     publishDir { "msas/muscle_refine"}
@@ -356,7 +357,6 @@ process refineMSAs {
     fi
     """
 }
- */
 
 /*
  * Combine all genomes into a single fasta file.
@@ -423,6 +423,7 @@ process searchGenomes {
 
 /*
  * Estimate trees using the MSAs
+*/
 process estimateTrees {
     container "quay.io/biocontainers/fasttree:2.1.10--h470a237_2"
     publishDir "trees"
@@ -437,4 +438,3 @@ process estimateTrees {
     fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
     """
 }
-*/
