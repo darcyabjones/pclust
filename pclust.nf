@@ -245,7 +245,7 @@ profileClu.into {
  * Merge the two clustering results into a single channel that we can look at.
  */
 combinedClu = cascadeClu4Combine.concat(profileClu4Combine)
-    
+
 /*
  * Extract information about each cluster.
  * E.G. cluster members, representative sequences, alignment statistics.

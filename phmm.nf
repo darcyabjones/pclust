@@ -5,6 +5,33 @@ vim: syntax=groovy
 -*- mode: groovy;-*-
 */
 
+
+def helpMessage() {
+    log.info"""
+    =================================
+    pclust/phmm
+    =================================
+
+    Usage:
+
+    abaaab
+
+    Mandatory Arguments:
+      --genomes               description
+
+    Options:
+      --non-existant          description
+
+    Outputs:
+
+    """.stripIndent()
+}
+
+if (params.help){
+    helpMessage()
+    exit 0
+}
+
 params.msas = "$baseDir/msas/muscle_refine/*.faa"
 msas = Channel.fromPath(params.msas)
 
@@ -15,6 +42,10 @@ params.hhscop = false
 params.hhuniref = false
 params.hhpfam = false
 
+/*
+ * Get the databases ready.
+ * Downloads them if they don't exist already.
+ */
 
 if ( !params.pdb ) {
     process downloadPDB {
@@ -75,7 +106,7 @@ if ( !params.hhuniref ) {
         wget -c http://wwwuser.gwdg.de/~compbiol/uniclust/2018_08/uniclust30_2018_08_hhsuite.tar.gz
         tar -zxf uniclust30_2018_08_hhsuite.tar.gz
         mv uniclust30_2018_08/* ./
-        rm -rf -- uniref
+        rm -rf -- uniclust30_2018_08
         """
     }
 } else if ( file(params.hhuniref).exists() ) {
@@ -83,6 +114,8 @@ if ( !params.hhuniref ) {
 } else {
     exit 1, "You specified a hhblits formatted uniref database, but it doesn't exist."
 }
+
+hhunirefDatabase.into { hhunirefDatabase4Enrich; hhunirefDatabase4Search}
 
 
 if ( !params.hhpdb ) {
@@ -150,25 +183,28 @@ if ( !params.hhpfam ) {
     exit 1, "You specified a hhblits formatted pfam database, but it doesn't exist."
 }
 
+
+/*
+ * Enrich the MSAs using hmms from uniref.
+ */
 process enrichMsas {
-    //container "pclust/hhblits"
     label "hhblits"
-    cpus 4
-    publishDir "enriched_msas"
+    publishDir "msas/enriched"
 
     input:
     file msa from msas
-    file db from hhunirefDatabase
+    file "db" from hhunirefDatabase4Enrich
 
     output:
-    set file("${msa.baseName}.hhr"), file("${msa.baseName}.a3m"), file("${msa.baseName}.hhm"), file("${msa.baseName}.tsv") into hmms
+    file "${msa.baseName}.hhr" into enrichedResults
+    file "${msa.baseName}.a3m" into enrichedMsas
 
     """
     NSEQS=\$(grep -c "^>" "${msa}")
     if [ "\${NSEQS}" -eq "1" ]; then
-      MOPT="-M first"
+      MOPT="first"
     else
-      MOPT="-M 50"
+      MOPT="50"
     fi
 
     hhblits \
@@ -179,137 +215,175 @@ process enrichMsas {
       -atab "${msa.baseName}.tsv" \
       -id 90 \
       -cov 60 \
-      \${MOPT} \
+      -M \${MOPT} \
       -mact 0.4 \
       -cpu 4 \
-      -d "${db}/uniclust30_2018_08"
+      -d "db/uniclust30_2018_08"
     """
 }
 
+enrichedMsas.into {
+    msas4Database;
+    msas4Search;
+    msas4Pfam;
+    msas4Scop;
+    msas4Pdb
+}
 
-hmms.into { hmms4database; hmms4search; hmms4pfam; hmms4scop; hmms4pdb }
 
-process buildHmmDatabase {
+/*
+ * Combine the enriched MSAs into a database that can be searched with hhsearch
+ */
+process createHmmDatabase {
     label "hhblits"
-    cpus 4
-    publishDir "hmm_database"
+    publishDir "hhsuite"
 
     input:
-    file "*.a3m" from hmms4database.map { hhr, a3m, hhm, tsv -> a3m }.collect()
+    file "*.a3m" from msas4Database.collect()
 
     output:
-    file "hmm" into hmmDatabase
+    file "clusterdb" into hhsuiteDb
 
     """
-    mkdir -p hmm
+    mkdir -p db
     hhsuitedb.py \
       --ia3m *.a3m \
-      -o hmm/db \
+      -o clusterdb/db \
       --cpu 4
     """
 }
 
-process searchHmmClusters {
+
+/*
+ * 
+ */
+process searchClusters {
     label "hhblits"
-    cpus 4
-    publishDir "hmm_search_vs_clusters"
+    publishDir "hhsuite/clusters"
 
     input:
-    file msa from hmms4search.map { hhr, a3m, hhm, tsv -> a3m }
-    file "hmm" from hmmDatabase
+    file msa name "msa.a3m" from msas4Search
+    file "db" from hmmDatabase
 
     output:
-    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into clusterHmmMatches
+    file "${msa.baseName}.hhr" into clusterResults
+    file "${msa.baseName}.a3m" into clusterMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_match.hhr" \
-      -oa3m "${msa.baseName}_match.a3m" \
-      -atab "${msa.baseName}_match.tsv" \
+      -i msa.a3m \
+      -o "${msa.baseName}.hhr" \
+      -oa3m "${msa.baseName}.a3m" \
+      -atab "${msa.baseName}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
       -cpu 4 \
-      -d "hmm/db"
+      -d "db/db"
     """
 }
 
 
-process searchPfam {
+process searchUniref {
     label "hhblits"
-    cpus 4
-    publishDir "hmm_search_vs_pfam"
+    publishDir "hhsuite/uniref"
 
     input:
-    file msa from hmms4pfam.map { hhr, a3m, hhm, tsv -> a3m }
-    file "hhpfam" from hhpfamDatabase
+    file msa name "msa.a3m" from msas4Pfam
+    file "db" from hhunirefDatabase4Search
 
     output:
-    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into pfamHmmMatches
+    file "${msa.baseName}.hhr" into pfamResults
+    file "${msa.baseName}.a3m" into pfamMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_match.hhr" \
-      -oa3m "${msa.baseName}_match.a3m" \
-      -atab "${msa.baseName}_match.tsv" \
+      -i msa.a3m \
+      -o "${msa.baseName}.hhr" \
+      -oa3m "${msa.baseName}.a3m" \
+      -atab "${msa.baseName}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
       -cpu 4 \
-      -d "hhpfam/pfam"
+      -d db/uniclust30_2018_08
+    """
+}
+
+process searchPfam {
+    label "hhblits"
+    publishDir "hhsuite/pfam"
+
+    input:
+    file msa name "msa.a3m" from msas4Pfam
+    file "db" from hhpfamDatabase
+
+    output:
+    file "${msa.baseName}.hhr" into pfamResults
+    file "${msa.baseName}.a3m" into pfamMsas
+
+    """
+    hhsearch \
+      -i msa.a3m \
+      -o "${msa.baseName}.hhr" \
+      -oa3m "${msa.baseName}.a3m" \
+      -atab "${msa.baseName}.tsv" \
+      -M a2m \
+      -all \
+      -mact 0.4 \
+      -cpu 4 \
+      -d "db/pfam"
     """
 }
 
 process searchScop {
     label "hhblits"
-    cpus 4
-    publishDir "hmm_search_vs_scop"
+    publishDir "hhsuite/scop"
 
     input:
-    file msa from hmms4scop.map { hhr, a3m, hhm, tsv -> a3m }
-    file "hhscop" from hhscopDatabase
+    file msa name "msa.a3m" from msas4Scop
+    file "db" from hhscopDatabase
 
     output:
-    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into scopHmmMatches
+    file "${msa.baseName}.hhr" into scopResults
+    file "${msa.baseName}.a3m" into scopMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_match.hhr" \
-      -oa3m "${msa.baseName}_match.a3m" \
-      -atab "${msa.baseName}_match.tsv" \
+      -i msa.a3m \
+      -o "${msa.baseName}.hhr" \
+      -oa3m "${msa.baseName}.a3m" \
+      -atab "${msa.baseName}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
       -cpu 4 \
-      -d "hhscop/scop90"
+      -d "db/scop90"
     """
 }
 
 process searchPdb {
     label "hhblits"
-    cpus 4
-    publishDir "hmm_search_vs_pdb"
+    publishDir "hhsuite/pdb"
 
     input:
-    file msa from hmms4pdb.map { hhr, a3m, hhm, tsv -> a3m }
-    file "hhpdb" from hhpdbDatabase
+    file msa name "msa.a3m" from msas4Pdb
+    file "db" from hhpdbDatabase
 
     output:
-    set file("${msa.baseName}_match.hhr"), file("${msa.baseName}_match.a3m"), file("${msa.baseName}_match.tsv") into pdbHmmMatches
+    file "${msa.baseName}.hhr" into pdbResults
+    file "${msa.baseName}.a3m" into pdbMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_match.hhr" \
-      -oa3m "${msa.baseName}_match.a3m" \
-      -atab "${msa.baseName}_match.tsv" \
+      -i msa.a3m \
+      -o "${msa.baseName}.hhr" \
+      -oa3m "${msa.baseName}.a3m" \
+      -atab "${msa.baseName}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
       -cpu 4 \
-      -d "hhpdb/pdb70"
+      -d "db/pdb70"
     """
 }
