@@ -35,8 +35,8 @@ if (params.help){
 params.msas = "$baseDir/msas/muscle_refine/*.faa"
 msas = Channel.fromPath(params.msas)
 
-params.dssp = false
-params.pdb = false
+//params.dssp = false
+//params.pdb = false
 params.hhpdb = false
 params.hhscop = false
 params.hhuniref = false
@@ -47,6 +47,7 @@ Get the databases ready.
 Downloads them if they don't exist already.
 */
 
+/*
 if ( !params.pdb ) {
     process downloadPDB {
         label "download"
@@ -71,8 +72,9 @@ if ( !params.pdb ) {
 } else {
     exit 1, "You specified a pdb database, but it doesn't exist."
 }
+*/
 
-
+/*
 if ( !params.dssp ) {
     process downloadDSSP {
         label "download"
@@ -90,6 +92,7 @@ if ( !params.dssp ) {
 } else {
     exit 1, "You specified a dssp database, but it doesn't exist."
 }
+*/
 
 
 if ( !params.hhuniref ) {
