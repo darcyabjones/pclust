@@ -34,7 +34,30 @@ if (params.help){
 
 params.genomes = "$baseDir/data/*.{fasta,gff3}"
 genomes = Channel.fromFilePairs( params.genomes, flat: true )
-genomes.tap { genomes4proteindb; genomes4genomedb }
+
+
+/*
+ * Tidy GFF3s so that genometools doesn't panic.
+ */
+process tidyGFFs {
+    container "quay.io/biocontainers/genometools-genometools:1.5.10--h470a237_1"
+
+    input:
+    set val(label), file(fasta), file(gff) from genomes
+
+    output:
+    set val(label), file(fasta), file("${gff.baseName}_tidied.gff3") into genomesTidied
+
+    """
+    gt gff3 \
+      -tidy \
+      -sort \
+      "${gff}" \
+    > "${gff.baseName}_tidied.gff3"
+    """
+}
+
+genomesTidied.tap { genomes4proteindb; genomes4genomedb }
 
 
 /*
@@ -47,7 +70,7 @@ process extractProteins {
     set val(label), file(fasta), file(gff) from genomes4proteindb
 
     output:
-    file "${label}.faa" into proteins
+    file "${label}.faa" optional true into proteins
 
     """
     gt extractfeat \
@@ -58,7 +81,12 @@ process extractProteins {
       -retainids \
       -seqfile "${fasta}" \
       "${gff}" \
-      > "${label}.faa"
+    | sed "s/>\\s*/>${label}./g" \
+    > "${label}.faa"
+    
+    if [ ! -s "${label}.faa" ]; then
+        rm -f "${label}.faa"
+    fi
     """
 }
 
@@ -105,6 +133,10 @@ seq.into {
     seq4Dedup
 }
 
+
+/*
+ * Select only unique sequences to cluster.
+ */
 process getDedupSequences {
     container "soedinglab/mmseqs2"
     label 'mmseqs'
@@ -128,6 +160,7 @@ process getDedupSequences {
     mmseqs createtsv sequence sequence dedup_clu dedup.tsv
     """
 }
+
 
 /*
  * Create the mmseqs2 sequence database
@@ -158,6 +191,9 @@ dedupSeq.into {
 }
 
 
+/*
+ * Perform the first pass clustering using basic mmseqs workflow.
+ */
 process clusterCascade {
     container "soedinglab/mmseqs2"
     label 'mmseqs'
@@ -186,6 +222,7 @@ cascadeClu.into {
     cascadeClu4Profile;
     cascadeClu4Combine;
 }
+
 
 /*
  * Perform the second clustering pass using sequence profiles.
@@ -241,10 +278,12 @@ profileClu.into {
     profileClu4GenomeSearch;
 }
 
+
 /*
  * Merge the two clustering results into a single channel that we can look at.
  */
 combinedClu = cascadeClu4Combine.concat(profileClu4Combine)
+
 
 /*
  * Extract information about each cluster.
@@ -290,6 +329,7 @@ process extractClusterStats {
     """
 }
 
+
 /*
  * Extract sequences from clusters.
  */
@@ -311,6 +351,7 @@ process getMmseqsMSA {
     """
 }
 
+
 /*
  * Extract the individual fasta sequences from the fasta-like file.
  */
@@ -327,6 +368,7 @@ process getMmseqsMSAFastas {
     extract_fastalike.py "${fastalike}"
     """
 }
+
 
 /*
  * Refine the fast MSAs from mmseqs using muscle
@@ -357,6 +399,7 @@ process refineMSAs {
     fi
     """
 }
+
 
 /*
  * Combine all genomes into a single fasta file.
@@ -394,6 +437,10 @@ process createGenomeSequenceDB {
     """
 }
 
+
+/*
+ * Search for the clusters in the original genome sequences.
+ */
 process searchGenomes {
     container "soedinglab/mmseqs2"
     label 'mmseqs'
@@ -421,9 +468,10 @@ process searchGenomes {
 
 }
 
+
 /*
  * Estimate trees using the MSAs
-*/
+ */
 process estimateTrees {
     container "quay.io/biocontainers/fasttree:2.1.10--h470a237_2"
     publishDir "trees"

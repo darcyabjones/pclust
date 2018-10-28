@@ -43,9 +43,9 @@ params.hhuniref = false
 params.hhpfam = false
 
 /*
- * Get the databases ready.
- * Downloads them if they don't exist already.
- */
+Get the databases ready.
+Downloads them if they don't exist already.
+*/
 
 if ( !params.pdb ) {
     process downloadPDB {
@@ -115,7 +115,7 @@ if ( !params.hhuniref ) {
     exit 1, "You specified a hhblits formatted uniref database, but it doesn't exist."
 }
 
-hhunirefDatabase.into { hhunirefDatabase4Enrich; hhunirefDatabase4Search}
+hhunirefDatabase.into { hhunirefDatabase4Enrich; hhunirefDatabase4Search }
 
 
 if ( !params.hhpdb ) {
@@ -225,6 +225,7 @@ process enrichMsas {
 enrichedMsas.into {
     msas4Database;
     msas4Search;
+    msas4Uniref;
     msas4Pfam;
     msas4Scop;
     msas4Pdb
@@ -242,10 +243,10 @@ process createHmmDatabase {
     file "*.a3m" from msas4Database.collect()
 
     output:
-    file "clusterdb" into hhsuiteDb
+    file "clusterdb" into clusterDb
 
     """
-    mkdir -p db
+    mkdir -p clusterdb
     hhsuitedb.py \
       --ia3m *.a3m \
       -o clusterdb/db \
@@ -253,28 +254,24 @@ process createHmmDatabase {
     """
 }
 
-
-/*
- * 
- */
 process searchClusters {
     label "hhblits"
     publishDir "hhsuite/clusters"
 
     input:
-    file msa name "msa.a3m" from msas4Search
-    file "db" from hmmDatabase
+    file msa from msas4Search
+    file "db" from clusterDb
 
     output:
-    file "${msa.baseName}.hhr" into clusterResults
-    file "${msa.baseName}.a3m" into clusterMsas
+    file "${msa.baseName}_result.hhr" into clusterResults
+    file "${msa.baseName}_result.a3m" into clusterMsas
 
     """
     hhsearch \
-      -i msa.a3m \
-      -o "${msa.baseName}.hhr" \
-      -oa3m "${msa.baseName}.a3m" \
-      -atab "${msa.baseName}.tsv" \
+      -i "${msa}" \
+      -o "${msa.baseName}_result.hhr" \
+      -oa3m "${msa.baseName}_result.a3m" \
+      -atab "${msa.baseName}_result.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
@@ -289,19 +286,20 @@ process searchUniref {
     publishDir "hhsuite/uniref"
 
     input:
-    file msa name "msa.a3m" from msas4Pfam
+    file msa from msas4Uniref
     file "db" from hhunirefDatabase4Search
 
     output:
-    file "${msa.baseName}.hhr" into pfamResults
-    file "${msa.baseName}.a3m" into pfamMsas
+    file "${msa.baseName}_result.hhr" into unirefResults
+    file "${msa.baseName}_result.a3m" into unirefMsas
 
     """
-    hhsearch \
-      -i msa.a3m \
-      -o "${msa.baseName}.hhr" \
-      -oa3m "${msa.baseName}.a3m" \
-      -atab "${msa.baseName}.tsv" \
+    hhblits \
+      -i "${msa}" \
+      -o "${msa.baseName}_result.hhr" \
+      -oa3m "${msa.baseName}_result.a3m" \
+      -atab "${msa.baseName}_result.tsv" \
+      -n 1 \
       -M a2m \
       -all \
       -mact 0.4 \
@@ -310,29 +308,30 @@ process searchUniref {
     """
 }
 
+
 process searchPfam {
     label "hhblits"
     publishDir "hhsuite/pfam"
 
     input:
-    file msa name "msa.a3m" from msas4Pfam
+    file msa from msas4Pfam
     file "db" from hhpfamDatabase
 
     output:
-    file "${msa.baseName}.hhr" into pfamResults
-    file "${msa.baseName}.a3m" into pfamMsas
+    file "${msa.baseName}_result.hhr" into pfamResults
+    file "${msa.baseName}_result.a3m" into pfamMsas
 
     """
     hhsearch \
-      -i msa.a3m \
-      -o "${msa.baseName}.hhr" \
-      -oa3m "${msa.baseName}.a3m" \
-      -atab "${msa.baseName}.tsv" \
+      -i "${msa}" \
+      -o "${msa.baseName}_result.hhr" \
+      -oa3m "${msa.baseName}_result.a3m" \
+      -atab "${msa.baseName}_result.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
       -cpu 4 \
-      -d "db/pfam"
+      -d db/pfam
     """
 }
 
@@ -341,19 +340,19 @@ process searchScop {
     publishDir "hhsuite/scop"
 
     input:
-    file msa name "msa.a3m" from msas4Scop
+    file msa from msas4Scop
     file "db" from hhscopDatabase
 
     output:
-    file "${msa.baseName}.hhr" into scopResults
-    file "${msa.baseName}.a3m" into scopMsas
+    file "${msa.baseName}_result.hhr" into scopResults
+    file "${msa.baseName}_result.a3m" into scopMsas
 
     """
     hhsearch \
-      -i msa.a3m \
-      -o "${msa.baseName}.hhr" \
-      -oa3m "${msa.baseName}.a3m" \
-      -atab "${msa.baseName}.tsv" \
+      -i "${msa}" \
+      -o "${msa.baseName}_result.hhr" \
+      -oa3m "${msa.baseName}_result.a3m" \
+      -atab "${msa.baseName}_result.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
@@ -367,19 +366,19 @@ process searchPdb {
     publishDir "hhsuite/pdb"
 
     input:
-    file msa name "msa.a3m" from msas4Pdb
+    file msa from msas4Pdb
     file "db" from hhpdbDatabase
 
     output:
-    file "${msa.baseName}.hhr" into pdbResults
-    file "${msa.baseName}.a3m" into pdbMsas
+    file "${msa.baseName}_result.hhr" into pdbResults
+    file "${msa.baseName}_result.a3m" into pdbMsas
 
     """
     hhsearch \
-      -i msa.a3m \
-      -o "${msa.baseName}.hhr" \
-      -oa3m "${msa.baseName}.a3m" \
-      -atab "${msa.baseName}.tsv" \
+      -i "${msa}" \
+      -o "${msa.baseName}_result.hhr" \
+      -oa3m "${msa.baseName}_result.a3m" \
+      -atab "${msa.baseName}_result.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \

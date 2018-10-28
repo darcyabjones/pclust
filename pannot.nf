@@ -6,10 +6,9 @@ vim: syntax=groovy
 */
 
 params.seqs = "$baseDir/dedup/dedup.fasta"
-seqs = file(params.seqs)
+seqs = Channel.fromPath( params.seqs )
 
-
-seqs.tap {seqs4Targetp}
+seqs.tap { seqs4Targetp }
     .splitFasta(by: 500)
     .into {
         seqs4Effectorp;
@@ -146,11 +145,11 @@ process gatherTmhmm {
 }
 
 seqs4Targetp
-   .splitFasta(by: 100)
-   .into {
-       seqs4Targetp1;
-       seqs4Targetp2;
-   }
+    .splitFasta(by: 100)
+    .into {
+        seqs4Targetp1;
+        seqs4Targetp2;
+    }
 
 process targetp {
     container "pclust/targetp"
@@ -282,7 +281,7 @@ process localizerEffector {
 
     """
     LOCALIZER.py -e -M -i "${fasta}" -o results
-    grep -v "^#" results/Results.txt 
+    grep -v "^#" results/Results.txt \
     | tail -n+2 \
     | sed '/^\\s*\$/d' \
     | awk -F'\t' 'OFS="\t" { sub(/[[:space:]].*/, "", \$1); print \$1, \$2, \$3, \$4}' \
@@ -316,7 +315,7 @@ process localizerPlant {
 
     """
     LOCALIZER.py -p -i "${fasta}" -o results
-    grep -v "^#" results/Results.txt 
+    grep -v "^#" results/Results.txt \
     | tail -n+2 \
     | sed '/^\\s*\$/d' \
     | awk -F'\t' 'OFS="\t" { sub(/[[:space:]].*/, "", \$1); print \$1, \$2, \$3, \$4}' \
