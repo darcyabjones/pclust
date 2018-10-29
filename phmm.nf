@@ -32,7 +32,7 @@ if (params.help){
     exit 0
 }
 
-params.msas = "$baseDir/msas/muscle_refine/*.faa"
+params.msas = "$baseDir/msas/muscle/*.faa"
 msas = Channel.fromPath(params.msas)
 
 //params.dssp = false

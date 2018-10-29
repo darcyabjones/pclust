@@ -5,7 +5,7 @@ vim: syntax=groovy
 -*- mode: groovy;-*-
 */
 
-params.seqs = "$baseDir/dedup/dedup.fasta"
+params.seqs = "$baseDir/sequences/dedup.fasta"
 seqs = Channel.fromPath( params.seqs )
 
 seqs.tap { seqs4Targetp }
