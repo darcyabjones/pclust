@@ -46,7 +46,8 @@ seqs.tap { seqs4Targetp }
     .splitFasta(by: 500)
     .into {
         seqs4Effectorp;
-        seqs4Signalp3;
+        seqs4Signalp3HMM;
+        seqs4Signalp3NN;
         seqs4Signalp4;
         seqs4Tmhmm;
         seqs4Phobius;
