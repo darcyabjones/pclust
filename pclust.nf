@@ -83,7 +83,7 @@ process extractProteins {
       "${gff}" \
     | sed "s/>\\s*/>${label}./g" \
     > "${label}.faa"
-    
+
     if [ ! -s "${label}.faa" ]; then
         rm -f "${label}.faa"
     fi
@@ -143,7 +143,7 @@ process clusterDedup {
     file "sequence" from seq4Dedup
 
     output:
-    file "dedup" into dedupClu 
+    file "dedup" into dedupClu
     file "dedup.tsv" into dedupCluTSV
 
     """
@@ -231,8 +231,9 @@ process clusterCascade {
       dedup/db \
       cascade/db \
       tmp \
+      -c 0.8 \
       -s 5 \
-      --cluster-steps 5 \
+      --cluster-steps 4 \
       --min-seq-id 0.3
     """
 }
@@ -272,7 +273,7 @@ process clusterProfile {
       result \
       tmp \
       -s 7.5 \
-      -c 0.60 \
+      -c 0.80 \
       -e 0.05 \
       --add-self-matches \
       --num-iterations 3
@@ -507,10 +508,31 @@ process searchGenomes {
     mkdir -p tmp
     # Create profiles for each cluster.
     mmseqs result2profile dedup/db dedup/db cascade/db profile
+
     # Search profile vs genome
-    mmseqs search profile genomes/db result tmp
+    # Search parameters are slightly more conservative than default.
+    mmseqs search \
+      profile \
+      genomes/db \
+      result \
+      tmp \
+      --realign \
+      --gapopen 15 \
+      --gapextend 2 \
+      --cov-mode 2 \
+      --rescore-mode 2 \
+      --min-length 20 \
+      --orf-start-mode 1 \
+      --use-all-table-starts true
+
     # Extract matches from results
-    mmseqs convertalis profile genomes/db result profile_matches.tsv
-    sed -i '1i query\ttarget\tident\tlength\tmismatch\tngap\tqstart\tqend\ttstart\ttend\tevalue\tbitscore' profile_matches.tsv
+    mmseqs convertalis \
+      profile \
+      genomes/db \
+      result profile_matches.tsv \
+      --format-mode 0 \
+      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen cigar qframe tframe"
+
+    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar\tqframe\ttframe' profile_matches.tsv
     """
 }
