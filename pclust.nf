@@ -147,12 +147,12 @@ process clusterDedup {
     file "dedup.tsv" into dedupCluTSV
 
     """
-    mmseqs clusthash sequence/db result --min-seq-id 1.0
+    mmseqs clusthash sequence/db result --threads ${task.cpus} --min-seq-id 1.0
 
     mkdir -p dedup
-    mmseqs clust sequence/db result dedup/db
+    mmseqs clust sequence/db result dedup/db --threads ${task.cpus}
 
-    mmseqs createtsv sequence/db sequence/db dedup/db dedup.tsv
+    mmseqs createtsv sequence/db sequence/db dedup/db dedup.tsv --threads ${task.cpus}
     sed -i '1i cluster\tmember' dedup.tsv
     """
 }
@@ -175,7 +175,7 @@ process getDedupSequences {
     file "dedup.fasta" into dedupSeqFasta
 
     """
-    mmseqs result2repseq sequence/db cluster/db dedup
+    mmseqs result2repseq sequence/db cluster/db dedup --threads ${task.cpus}
     mmseqs result2flat sequence/db sequence/db dedup dedup.fasta --use-fasta-header
     """
 }
@@ -231,6 +231,7 @@ process clusterCascade {
       dedup/db \
       cascade/db \
       tmp \
+      --threads ${task.cpus} \
       -c 0.8 \
       -s 5 \
       --cluster-steps 4 \
@@ -262,7 +263,12 @@ process clusterProfile {
     """
     # Create profiles for each cluster.
     # Generates the profile_consensus file too.
-    mmseqs result2profile dedup/db dedup/db cascade/db profile1
+    mmseqs result2profile \
+      dedup/db \
+      dedup/db \
+      cascade/db \
+      profile1 \
+      --threads ${task.cpus}
 
     # Search the profiles against the profile consensus sequences.
     # Uses an iterative strategy.
@@ -272,6 +278,7 @@ process clusterProfile {
       profile1_consensus \
       result \
       tmp \
+      --threads ${task.cpus} \
       -s 7.5 \
       -c 0.70 \
       -e 0.05 \
@@ -279,7 +286,11 @@ process clusterProfile {
       --num-iterations 3
 
     # Cluster the matches of profiles vs consensus sequences.
-    mmseqs clust profile1 result profile1_clusters_consensus
+    mmseqs clust \
+      profile1 \
+      result \
+      profile1_clusters_consensus \
+      --threads ${task.cpus}
 
     # Merge the original clusters with the new ones to get all sequences back.
     mkdir -p profile
@@ -287,7 +298,8 @@ process clusterProfile {
       dedup/db \
       profile/db \
       cascade/db \
-      profile1_clusters_consensus
+      profile1_clusters_consensus \
+      --threads ${task.cpus}
     """
 }
 
@@ -359,7 +371,12 @@ process joinClusterStats {
     file "clusters.tsv" into clusterStats
 
     """
-    join_clusters.R dedup.tsv cascade.tsv profile.tsv profile_stats.tsv > clusters.tsv
+    join_clusters.R \
+      dedup.tsv \
+      cascade.tsv \
+      profile.tsv \
+      profile_stats.tsv \
+    > clusters.tsv
     """
 }
 
@@ -378,8 +395,18 @@ process getMmseqsMSA {
     file "msa.fastalike" into msaFastaLike
 
     """
-    mmseqs result2msa dedup/db dedup/db profile/db msa
-    mmseqs result2flat dedup/db dedup/db msa msa.fastalike
+    mmseqs result2msa \
+      dedup/db \
+      dedup/db \
+      profile/db \
+      msa \
+      --threads ${task.cpus}
+
+    mmseqs result2flat \
+      dedup/db \
+      dedup/db \
+      msa \
+      msa.fastalike
     """
 }
 
@@ -448,7 +475,7 @@ process estimateTrees {
     file "${msa.baseName}.nwk" into indivTrees
 
     """
-    fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
+    FastTree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
     """
 }
 
@@ -458,7 +485,7 @@ process estimateTrees {
  */
 process addGenomeNameToScaffold {
     label "posix"
- 
+
     input:
     set val(label), file(fasta), file(gff) from genomes4genomedb
 
@@ -528,8 +555,14 @@ process searchGenomes {
 
     """
     mkdir -p tmp
+
     # Create profiles for each cluster.
-    mmseqs result2profile dedup/db dedup/db cascade/db profile
+    mmseqs result2profile \
+      dedup/db \
+      dedup/db \
+      cascade/db \
+      profile \
+      --threads ${task.cpus}
 
     # Search profile vs genome
     # Search parameters are slightly more conservative than default.
@@ -538,6 +571,7 @@ process searchGenomes {
       genomes/db \
       result \
       tmp \
+      --threads ${task.cpus} \
       --realign \
       --gap-open 15 \
       --gap-extend 2 \
@@ -552,6 +586,7 @@ process searchGenomes {
       profile \
       genomes/db \
       result profile_matches.tsv \
+      --threads ${task.cpus} \
       --format-mode 0 \
       --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen cigar qframe tframe"
 
