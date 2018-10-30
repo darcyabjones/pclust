@@ -384,6 +384,7 @@ process getMmseqsMSAFastas {
  * Refine the fast MSAs from mmseqs using muscle
  * The issue with the regular mmseqs MSAs is that it can't have gaps in the
  * seed sequence, muscle should refit that.
+ */
 process refineMSAs {
     label "muscle"
     publishDir "msas/muscle"
@@ -408,9 +409,30 @@ process refineMSAs {
     fi
     """
 }
+
+
+/*
+ * Estimate trees using the MSAs
  */
+process estimateTrees {
+    label "fasttree"
+    publishDir "msas/trees"
+
+    input:
+    file msa from refinedMsas
+
+    output:
+    file "${msa.baseName}.nwk" into indivTrees
+
+    """
+    fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
+    """
+}
 
 
+/*
+ * Add the genome name to the scaffold names in the genome fasta.
+ */
 process addGenomeNameToScaffold {
     label "posix"
  
@@ -425,6 +447,7 @@ process addGenomeNameToScaffold {
     sed "s/>\\s*/>\${LABEL}./g" < ${fasta} > genome.fasta
     """
 }
+
 
 /*
  * Combine all genomes into a single fasta file.
@@ -491,22 +514,3 @@ process searchGenomes {
     sed -i '1i query\ttarget\tident\tlength\tmismatch\tngap\tqstart\tqend\ttstart\ttend\tevalue\tbitscore' profile_matches.tsv
     """
 }
-
-
-/*
- * Estimate trees using the MSAs
-process estimateTrees {
-    label "fasttree"
-    publishDir "msas/trees"
-
-    input:
-    file msa from refinedMsas
-
-    output:
-    file "${msa.baseName}.nwk" into indivTrees
-
-    """
-    fasttree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
-    """
-}
- */
