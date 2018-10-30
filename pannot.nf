@@ -21,7 +21,7 @@ seqs.tap { seqs4Targetp }
     }
 
 process effectorp {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from seqs4Effectorp
@@ -35,6 +35,7 @@ process effectorp {
 }
 
 process gatherEffectorp {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -53,7 +54,7 @@ process gatherEffectorp {
 }
 
 process signalp3 {
-    container "pclust/signalp3"
+    label "signalp3"
 
     input:
     file fasta from seqs4Signalp3
@@ -67,6 +68,7 @@ process signalp3 {
 }
 
 process gatherSignalp3 {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -82,7 +84,7 @@ process gatherSignalp3 {
 }
 
 process signalp4 {
-    container "pclust/signalp4"
+    label "signalp4"
 
     input:
     file fasta from seqs4Signalp4
@@ -97,6 +99,7 @@ process signalp4 {
 }
 
 process gatherSignalp4 {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -112,7 +115,7 @@ process gatherSignalp4 {
 }
 
 process tmhmm {
-    container "pclust/tmhmm"
+    label "tmhmm"
 
     input:
     file fasta from seqs4Tmhmm
@@ -126,6 +129,7 @@ process tmhmm {
 }
 
 process gatherTmhmm {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -152,7 +156,7 @@ seqs4Targetp
     }
 
 process targetp {
-    container "pclust/targetp"
+    label "targetp"
 
     input:
     file fasta from seqs4Targetp1
@@ -166,6 +170,7 @@ process targetp {
 }
 
 process gatherTargetp {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -181,7 +186,7 @@ process gatherTargetp {
 }
 
 process targetpPlant {
-    container "pclust/targetp"
+    label "targetp"
 
     input:
     file fasta from seqs4Targetp2
@@ -195,6 +200,7 @@ process targetpPlant {
 }
 
 process gatherTargetpPlant {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -210,7 +216,7 @@ process gatherTargetpPlant {
 }
 
 process phobius {
-    container "pclust/phobius"
+    label "phobius"
 
     input:
     file fasta from seqs4Phobius
@@ -224,6 +230,7 @@ process phobius {
 }
 
 process gatherPhobius {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -239,7 +246,7 @@ process gatherPhobius {
 }
 
 process apoplastp {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from seqs4Apoplastp
@@ -253,6 +260,7 @@ process apoplastp {
 }
 
 process gatherApoplastp {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -271,7 +279,7 @@ process gatherApoplastp {
 }
 
 process localizerEffector {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from matureProteins
@@ -290,6 +298,7 @@ process localizerEffector {
 }
 
 process gatherLocalizerEffector {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -305,7 +314,7 @@ process gatherLocalizerEffector {
 }
 
 process localizerPlant {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from seqs4LocalizerPlant
@@ -324,6 +333,7 @@ process localizerPlant {
 }
 
 process gatherLocalizerPlant {
+    label "posix"
     publishDir "annotations"
 
     input:
