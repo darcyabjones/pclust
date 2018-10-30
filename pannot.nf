@@ -5,9 +5,43 @@ vim: syntax=groovy
 -*- mode: groovy;-*-
 */
 
+
+def helpMessage() {
+    log.info"""
+    =================================
+    pclust/pannot
+    =================================
+
+    Usage:
+
+    abaaab
+
+    Mandatory Arguments:
+      --seqs               description
+
+    Options:
+      --non-existant          description
+
+    Outputs:
+
+    """.stripIndent()
+}
+
+if (params.help){
+    helpMessage()
+    exit 0
+}
+
+
+// The unique proteins to run predictions on.
 params.seqs = "$baseDir/sequences/dedup.fasta"
 seqs = Channel.fromPath( params.seqs )
 
+
+/* Split the channel for reuse.
+ * Note that targetp will be split separately into smaller bits because it's
+ * temperamental.
+ */
 seqs.tap { seqs4Targetp }
     .splitFasta(by: 500)
     .into {
@@ -20,6 +54,10 @@ seqs.tap { seqs4Targetp }
         seqs4LocalizerPlant;
     }
 
+
+/*
+ * Run effectorp on each sequence.
+ */
 process effectorp {
     container "pclust/sperschneider"
 
@@ -34,6 +72,10 @@ process effectorp {
     """
 }
 
+
+/*
+ * Combine chunks of effectorp results into file.
+ */
 process gatherEffectorp {
     publishDir "annotations"
 
@@ -52,34 +94,84 @@ process gatherEffectorp {
     """
 }
 
-process signalp3 {
+
+/*
+ * Run signalp3 HMM predictions for each sequence.
+ * This is known to be more sensitive for detecting oomycete effectors.
+ * See doi: 10.3389/fpls.2015.01168
+ */
+process signalp3HMM {
     container "pclust/signalp3"
 
     input:
-    file fasta from seqs4Signalp3
+    file fasta from seqs4Signalp3HMM
 
     output:
-    file "${fasta}.tsv" into signalp3ChunkedResults
+    file "${fasta}.tsv" into signalp3HMMChunkedResults
 
     """
     signalp -type euk -method "hmm" -short "${fasta}" > "${fasta}.tsv"
     """
 }
 
-process gatherSignalp3 {
+
+/*
+ * Combine signalp3 results into file.
+ */
+process gatherSignalp3HMM {
     publishDir "annotations"
 
     input:
-    file "tables" from signalp3ChunkedResults.collect()
+    file "tables" from signalp3HMMChunkedResults.collect()
 
     output:
-    file "signalp3.tsv" into signalp3Results
+    file "signalp3_hmm.tsv" into signalp3HMMResults
 
     """
     echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3.tsv
-    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3.tsv
+    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_hmm.tsv
     """
 }
+
+
+/*
+ * Run signalp3 neural net predictions for each sequence.
+ * This is known to be more sensitive for detecting fungal effectors.
+ * See doi: 10.3389/fpls.2015.01168
+ */
+process signalp3NN {
+    container "pclust/signalp3"
+
+    input:
+    file fasta from seqs4Signalp3NN
+
+    output:
+    file "${fasta}.tsv" into signalp3NNChunkedResults
+
+    """
+    signalp -type euk -method "nn" -short "${fasta}" > "${fasta}.tsv"
+    """
+}
+
+
+/*
+ * Combine signalp3 results into file.
+ */
+process gatherSignalp3NN {
+    publishDir "annotations"
+
+    input:
+    file "tables" from signalp3NNChunkedResults.collect()
+
+    output:
+    file "signalp3_nn.tsv" into signalp3NNResults
+
+    """
+    echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3.tsv
+    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_nn.tsv
+    """
+}
+
 
 process signalp4 {
     container "pclust/signalp4"
