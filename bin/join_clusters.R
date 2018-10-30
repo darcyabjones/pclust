@@ -66,11 +66,7 @@ count_clusters <- function(df) {
         left_join(cascade_count, by="cascade") %>%
         left_join(profile_count, by="profile") %>%
         select(gene, dedup, dedup_count, cascade,
-               cascade_count, profile, profile_count) %>%
-        arrange(desc(profile_count), profile,
-                desc(cascade_count), cascade,
-                desc(dedup_count), dedup,
-                gene)
+               cascade_count, profile, profile_count)
 
     return(joined)
 }
@@ -109,7 +105,12 @@ read_cluster_stats <- function(clusters, path) {
 
 joined <- read_clusters(args[1], args[2], args[3]) %>%
     count_clusters() %>%
-    read_cluster_stats(args[4])
+    read_cluster_stats(args[4]) %>%
+    arrange(desc(profile_count), profile,
+            desc(cascade_count), cascade,
+            desc(ident),
+            desc(dedup_count), dedup,
+            gene)
 
 # Write to stdout
 cat(format_tsv(joined))
