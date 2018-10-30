@@ -59,7 +59,7 @@ seqs.tap { seqs4Targetp }
  * Run effectorp on each sequence.
  */
 process effectorp {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from seqs4Effectorp
@@ -77,6 +77,7 @@ process effectorp {
  * Combine chunks of effectorp results into file.
  */
 process gatherEffectorp {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -101,7 +102,7 @@ process gatherEffectorp {
  * See doi: 10.3389/fpls.2015.01168
  */
 process signalp3HMM {
-    container "pclust/signalp3"
+    label "signalp3"
 
     input:
     file fasta from seqs4Signalp3HMM
@@ -119,6 +120,7 @@ process signalp3HMM {
  * Combine signalp3 results into file.
  */
 process gatherSignalp3HMM {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -128,7 +130,7 @@ process gatherSignalp3HMM {
     file "signalp3_hmm.tsv" into signalp3HMMResults
 
     """
-    echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3.tsv
+    echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3_hmm.tsv
     cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_hmm.tsv
     """
 }
@@ -140,7 +142,7 @@ process gatherSignalp3HMM {
  * See doi: 10.3389/fpls.2015.01168
  */
 process signalp3NN {
-    container "pclust/signalp3"
+    label "signalp3"
 
     input:
     file fasta from seqs4Signalp3NN
@@ -167,28 +169,41 @@ process gatherSignalp3NN {
     file "signalp3_nn.tsv" into signalp3NNResults
 
     """
-    echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3.tsv
+    echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3_nn.tsv
     cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_nn.tsv
     """
 }
 
 
+/*
+ * Run signalp4 for all sequences. Also get mature proteins for later use.
+ * If there were no secreted proteins, don't emit fasta.
+ */
 process signalp4 {
-    container "pclust/signalp4"
+    label "signalp4"
 
     input:
     file fasta from seqs4Signalp4
 
     output:
     file "${fasta}.tsv" into signalp4ChunkedResults
-    file "${fasta}_mature.fasta" into matureProteins
+    file "${fasta}_mature.fasta" optional true into matureProteins
 
     """
     signalp -t euk -f short -m "${fasta}_mature.fasta" "${fasta}" > "${fasta}.tsv"
+
+    if [ ! -s "${fasta}_mature.fasta" ]; then
+      rm -f "${fasta}_mature.fasta"
+    fi
     """
 }
 
+
+/*
+ * Combine signalp4 chunks into file.
+ */
 process gatherSignalp4 {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -203,8 +218,12 @@ process gatherSignalp4 {
     """
 }
 
+
+/*
+ * Run tmhmm transmembrane domain prediction.
+ */
 process tmhmm {
-    container "pclust/tmhmm"
+    label "tmhmm"
 
     input:
     file fasta from seqs4Tmhmm
@@ -217,7 +236,12 @@ process tmhmm {
     """
 }
 
+
+/*
+ * Collect results into file
+ */
 process gatherTmhmm {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -236,6 +260,10 @@ process gatherTmhmm {
     """
 }
 
+
+/*
+ * Because targetp is a bit finicky, process it in smaller chunks.
+ */
 seqs4Targetp
     .splitFasta(by: 100)
     .into {
@@ -243,8 +271,12 @@ seqs4Targetp
         seqs4Targetp2;
     }
 
+
+/*
+ * Run targetp using non-plant networks for chunks.
+ */
 process targetp {
-    container "pclust/targetp"
+    label "targetp"
 
     input:
     file fasta from seqs4Targetp1
@@ -257,7 +289,12 @@ process targetp {
     """
 }
 
+
+/*
+ * Collect targetp chunks into file
+ */
 process gatherTargetp {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -272,8 +309,12 @@ process gatherTargetp {
     """
 }
 
+
+/*
+ * Run targetp using plant networks for chunks.
+ */
 process targetpPlant {
-    container "pclust/targetp"
+    label "targetp"
 
     input:
     file fasta from seqs4Targetp2
@@ -286,7 +327,12 @@ process targetpPlant {
     """
 }
 
+
+/*
+ * Collect targetp chunks into file.
+ */
 process gatherTargetpPlant {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -301,8 +347,13 @@ process gatherTargetpPlant {
     """
 }
 
+
+/*
+ * Run phobius predictions for chunks.
+ * Phobius has comparable sensitivity to signalp nn models and also runs tm prediction.
+ */
 process phobius {
-    container "pclust/phobius"
+    label "phobius"
 
     input:
     file fasta from seqs4Phobius
@@ -315,7 +366,12 @@ process phobius {
     """
 }
 
+
+/*
+ * Collect phobius results into file.
+ */
 process gatherPhobius {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -330,8 +386,12 @@ process gatherPhobius {
     """
 }
 
+
+/*
+ * Run apoplastp for chunks
+ */
 process apoplastp {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from seqs4Apoplastp
@@ -344,7 +404,12 @@ process apoplastp {
     """
 }
 
+
+/*
+ * Collect chunked apoplastp results into file.
+ */
 process gatherApoplastp {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -362,8 +427,12 @@ process gatherApoplastp {
     """
 }
 
+
+/*
+ * Run localizer in "effector" mode using mature peptides from signalp
+ */
 process localizerEffector {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from matureProteins
@@ -381,7 +450,12 @@ process localizerEffector {
     """
 }
 
+
+/*
+ * Collect localizer results into a file.
+ */
 process gatherLocalizerEffector {
+    label "posix"
     publishDir "annotations"
 
     input:
@@ -396,8 +470,12 @@ process gatherLocalizerEffector {
     """
 }
 
+
+/*
+ * Run localizer using plant mode.
+ */
 process localizerPlant {
-    container "pclust/sperschneider"
+    label "sperschneider"
 
     input:
     file fasta from seqs4LocalizerPlant
@@ -415,7 +493,12 @@ process localizerPlant {
     """
 }
 
+
+/*
+ * Collect localizer results into file.
+ */
 process gatherLocalizerPlant {
+    label "posix"
     publishDir "annotations"
 
     input:

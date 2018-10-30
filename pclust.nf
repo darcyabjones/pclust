@@ -273,7 +273,7 @@ process clusterProfile {
       result \
       tmp \
       -s 7.5 \
-      -c 0.80 \
+      -c 0.70 \
       -e 0.05 \
       --add-self-matches \
       --num-iterations 3
@@ -356,7 +356,7 @@ process joinClusterStats {
     file "profile_stats.tsv" from profileCluStats
 
     output:
-    file "clusters.tsv into clusterStats
+    file "clusters.tsv" into clusterStats
 
     """
     join_clusters.R dedup.tsv cascade.tsv profile.tsv profile_stats.tsv > clusters.tsv
@@ -539,8 +539,8 @@ process searchGenomes {
       result \
       tmp \
       --realign \
-      --gapopen 15 \
-      --gapextend 2 \
+      --gap-open 15 \
+      --gap-extend 2 \
       --cov-mode 2 \
       --rescore-mode 2 \
       --min-length 20 \
