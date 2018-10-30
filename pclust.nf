@@ -324,7 +324,7 @@ process extractCascadeClusterStats {
  * Extract information about each cluster.
  * E.G. cluster members, representative sequences, alignment statistics.
  */
-process extractClusterStats {
+process extractProfileClusterStats {
     label 'mmseqs'
     publishDir "clusters"
 
@@ -339,6 +339,28 @@ process extractClusterStats {
 
     script:
     template "mmseqs_cluster_stats.sh"
+}
+
+
+/*
+ * Merge the cluster tables and profile statistics
+ */
+process joinClusterStats {
+    label 'R'
+    publishDir "clusters"
+
+    input:
+    file "dedup.tsv" from dedupCluTSV
+    file "cascade.tsv" from cascadeCluTSV
+    file "profile.tsv" from profileCluTSV
+    file "profile_stats.tsv" from profileCluStats
+
+    output:
+    file "clusters.tsv into clusterStats
+
+    """
+    join_clusters.R dedup.tsv cascade.tsv profile.tsv profile_stats.tsv > clusters.tsv
+    """
 }
 
 
