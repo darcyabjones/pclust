@@ -141,7 +141,6 @@ process gatherSignalp3HMM {
  * Run signalp3 neural net predictions for each sequence.
  * This is known to be more sensitive for detecting fungal effectors.
  * See doi: 10.3389/fpls.2015.01168
- */
 process signalp3NN {
     label "signalp3"
 
@@ -155,11 +154,11 @@ process signalp3NN {
     signalp -type euk -method "nn" -short "${fasta}" > "${fasta}.tsv"
     """
 }
+ */
 
 
 /*
  * Combine signalp3 results into file.
- */
 process gatherSignalp3NN {
     publishDir "annotations"
 
@@ -174,6 +173,7 @@ process gatherSignalp3NN {
     cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_nn.tsv
     """
 }
+ */
 
 
 /*
