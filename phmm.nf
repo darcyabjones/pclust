@@ -17,7 +17,7 @@ def helpMessage() {
     abaaab
 
     Mandatory Arguments:
-      --genomes               description
+      --msas               description
 
     Options:
       --non-existant          description
@@ -72,9 +72,8 @@ if ( !params.pdb ) {
 } else {
     exit 1, "You specified a pdb database, but it doesn't exist."
 }
-*/
 
-/*
+
 if ( !params.dssp ) {
     process downloadDSSP {
         label "download"
@@ -93,7 +92,6 @@ if ( !params.dssp ) {
     exit 1, "You specified a dssp database, but it doesn't exist."
 }
 */
-
 
 if ( !params.hhuniref ) {
     process downloadHHUniref {
@@ -220,7 +218,7 @@ process enrichMsas {
       -cov 60 \
       -M \${MOPT} \
       -mact 0.4 \
-      -cpu 4 \
+      -cpu ${task.cpus} \
       -d "db/uniclust30_2018_08"
     """
 }
@@ -236,7 +234,7 @@ enrichedMsas.into {
 
 
 /*
- * Combine the enriched MSAs into a database that can be searched with hhsearch
+ * Combine the enriched MSAs into a database that can be searched with hhsearch.
  */
 process createHmmDatabase {
     label "hhblits"
@@ -253,10 +251,14 @@ process createHmmDatabase {
     hhsuitedb.py \
       --ia3m *.a3m \
       -o clusterdb/db \
-      --cpu 4
+      --cpu ${task.cpus}
     """
 }
 
+
+/*
+ * Search each cluster hmm against all other clusters.
+ */
 process searchClusters {
     label "hhblits"
     publishDir "hhsuite/clusters"
@@ -278,12 +280,15 @@ process searchClusters {
       -M a2m \
       -all \
       -mact 0.4 \
-      -cpu 4 \
+      -cpu ${task.cpus} \
       -d "db/db"
     """
 }
 
 
+/*
+ * Search for shorter matches in the uniref database.
+ */
 process searchUniref {
     label "hhblits"
     publishDir "hhsuite/uniref"
@@ -306,12 +311,15 @@ process searchUniref {
       -M a2m \
       -all \
       -mact 0.4 \
-      -cpu 4 \
+      -cpu ${task.cpus} \
       -d db/uniclust30_2018_08
     """
 }
 
 
+/*
+ * Search for pfam domains.
+ */
 process searchPfam {
     label "hhblits"
     publishDir "hhsuite/pfam"
@@ -333,11 +341,15 @@ process searchPfam {
       -M a2m \
       -all \
       -mact 0.4 \
-      -cpu 4 \
+      -cpu ${task.cpus} \
       -d db/pfam
     """
 }
 
+
+/*
+ * Search for SCOP matches.
+ */
 process searchScop {
     label "hhblits"
     publishDir "hhsuite/scop"
@@ -359,11 +371,15 @@ process searchScop {
       -M a2m \
       -all \
       -mact 0.4 \
-      -cpu 4 \
+      -cpu ${task.cpus} \
       -d "db/scop90"
     """
 }
 
+
+/*
+ * Search for PDB matches.
+ */
 process searchPdb {
     label "hhblits"
     publishDir "hhsuite/pdb"
@@ -385,7 +401,7 @@ process searchPdb {
       -M a2m \
       -all \
       -mact 0.4 \
-      -cpu 4 \
+      -cpu ${task.cpus} \
       -d "db/pdb70"
     """
 }
