@@ -513,3 +513,43 @@ process gatherLocalizerPlant {
     cat tables* >> localizer_plant.tsv
     """
 }
+
+
+/*
+ * Combine annotation results into single file.
+ */
+process combineAnnotations {
+    label "R"
+    publishDir "annotations"
+
+    input:
+    file "apoplastp.tsv" from apoplastpResults
+    file "effectorp.tsv" from effectorpResults
+    file "localizer_effector.tsv" from localizerEffectorResults
+    file "localizer_plant.tsv" from localizerPlantResults
+    file "signalp3_hmm.tsv" from signalp3HMMResults
+    file "signalp4.tsv" from signalp4Results
+    file "targetp_non_plant.tsv" from targetpResults
+    file "targetp_plant.tsv" from targetpPlantResults
+    file "tmhmm.tsv" from tmhmmResults
+    file "phobius.tsv" from phobiusResults
+
+    output:
+    file "combined.tsv" into combinedResults
+
+    """
+    join_annotations.R \
+      apoplastp.tsv \
+      effectorp.tsv \
+      localizer_effector.tsv \
+      localizer_plant.tsv \
+      signalp3_hmm.tsv \
+      dummy \
+      signalp4.tsv \
+      targetp_non_plant.tsv \
+      targetp_plant.tsv \
+      tmhmm.tsv \
+      phobius.tsv \
+    > combined.tsv
+    """
+}
