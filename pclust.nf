@@ -520,7 +520,6 @@ process combineGenomeFasta {
 
 /*
  * Construct genomes database
- */
 process createGenomeSequenceDB {
     label 'mmseqs'
     publishDir "sequences"
@@ -537,10 +536,10 @@ process createGenomeSequenceDB {
     """
 }
 
+ */
 
 /*
  * Search for the clusters in the original genome sequences.
- */
 process searchGenomes {
     label 'mmseqs'
     publishDir "genome_searches"
@@ -593,3 +592,4 @@ process searchGenomes {
     sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar\tqframe\ttframe' profile_matches.tsv
     """
 }
+ */
