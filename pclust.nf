@@ -94,20 +94,7 @@ process extractProteins {
 /*
  * Combine all proteins into a single fasta file.
  */
-process combineFasta {
-    label "posix"
-    publishDir "sequences"
-
-    input:
-    file "*.faa" from proteins.collect()
-
-    output:
-    file "proteins.faa" into combinedFasta
-
-    """
-    cat *faa > proteins.faa
-    """
-}
+combinedFasta = proteins.collectFile(name: "proteins.faa", storeDir: "sequences")
 
 
 /*
@@ -502,20 +489,8 @@ process addGenomeNameToScaffold {
 /*
  * Combine all genomes into a single fasta file.
  */
-process combineGenomeFasta {
-    label "posix"
-    publishDir "sequences"
-
-    input:
-    file "*.fasta" from genomesWithNames.collect()
-
-    output:
-    file "genomes.fasta" into combinedGenomeFasta
-
-    """
-    cat *.fasta > genomes.fasta
-    """
-}
+combinedGenomeFasta = genomesWithNames
+    .collectFile(name: "genomes.fasta", storeDir: "sequences")
 
 
 /*

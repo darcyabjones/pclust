@@ -132,7 +132,7 @@ process gatherSignalp3HMM {
 
     """
     echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3_hmm.tsv
-    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_hmm.tsv
+    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" | sed "s/\t$//g" >> signalp3_hmm.tsv
     """
 }
 
@@ -141,7 +141,6 @@ process gatherSignalp3HMM {
  * Run signalp3 neural net predictions for each sequence.
  * This is known to be more sensitive for detecting fungal effectors.
  * See doi: 10.3389/fpls.2015.01168
- */
 process signalp3NN {
     label "signalp3"
 
@@ -155,11 +154,11 @@ process signalp3NN {
     signalp -type euk -method "nn" -short "${fasta}" > "${fasta}.tsv"
     """
 }
+ */
 
 
 /*
  * Combine signalp3 results into file.
- */
 process gatherSignalp3NN {
     publishDir "annotations"
 
@@ -174,6 +173,7 @@ process gatherSignalp3NN {
     cat tables* | grep -v "#" | sed "s/ \\+/\t/g" >> signalp3_nn.tsv
     """
 }
+ */
 
 
 /*
@@ -511,5 +511,45 @@ process gatherLocalizerPlant {
     """
     echo "seqid\tchloroplast\tmitochondria\tnucleus" > localizer_plant.tsv
     cat tables* >> localizer_plant.tsv
+    """
+}
+
+
+/*
+ * Combine annotation results into single file.
+ */
+process combineAnnotations {
+    label "R"
+    publishDir "annotations"
+
+    input:
+    file "apoplastp.tsv" from apoplastpResults
+    file "effectorp.tsv" from effectorpResults
+    file "localizer_effector.tsv" from localizerEffectorResults
+    file "localizer_plant.tsv" from localizerPlantResults
+    file "signalp3_hmm.tsv" from signalp3HMMResults
+    file "signalp4.tsv" from signalp4Results
+    file "targetp_non_plant.tsv" from targetpResults
+    file "targetp_plant.tsv" from targetpPlantResults
+    file "tmhmm.tsv" from tmhmmResults
+    file "phobius.tsv" from phobiusResults
+
+    output:
+    file "combined.tsv" into combinedResults
+
+    """
+    join_annotations.R \
+      apoplastp.tsv \
+      effectorp.tsv \
+      localizer_effector.tsv \
+      localizer_plant.tsv \
+      signalp3_hmm.tsv \
+      dummy \
+      signalp4.tsv \
+      targetp_non_plant.tsv \
+      targetp_plant.tsv \
+      tmhmm.tsv \
+      phobius.tsv \
+    > combined.tsv
     """
 }
