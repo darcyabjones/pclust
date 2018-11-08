@@ -41,6 +41,7 @@ genomes = Channel.fromFilePairs( params.genomes, flat: true )
  */
 process tidyGFFs {
     label "genometools"
+    tag { label }
 
     input:
     set val(label), file(fasta), file(gff) from genomes
@@ -65,12 +66,13 @@ genomesTidied.tap { genomes4proteindb; genomes4genomedb }
  */
 process extractProteins {
     label "genometools"
+    tag { label }
 
     input:
     set val(label), file(fasta), file(gff) from genomes4proteindb
 
     output:
-    file "${label}.faa" optional true into proteins
+    file "${label}.faa" into proteins
 
     """
     gt extractfeat \
@@ -83,10 +85,6 @@ process extractProteins {
       "${gff}" \
     | sed "s/>\\s*/>${label}./g" \
     > "${label}.faa"
-
-    if [ ! -s "${label}.faa" ]; then
-        rm -f "${label}.faa"
-    fi
     """
 }
 
@@ -221,7 +219,7 @@ process clusterCascade {
       --threads ${task.cpus} \
       -c 0.8 \
       -s 5 \
-      --cluster-steps 4 \
+      --cluster-steps 3 \
       --min-seq-id 0.3
     """
 }
@@ -266,11 +264,11 @@ process clusterProfile {
       result \
       tmp \
       --threads ${task.cpus} \
-      -s 7.5 \
+      -s 7.0 \
       -c 0.70 \
       -e 0.05 \
       --add-self-matches \
-      --num-iterations 3
+      --num-iterations 2
 
     # Cluster the matches of profiles vs consensus sequences.
     mmseqs clust \
@@ -425,6 +423,7 @@ process getMmseqsMSAFastas {
 process refineMSAs {
     label "muscle"
     publishDir "msas/muscle"
+    tag { fasta.baseName }
 
     input:
     file fasta from mmseqsMsas.flatten()
@@ -469,9 +468,9 @@ process estimateTrees {
 
 /*
  * Add the genome name to the scaffold names in the genome fasta.
- */
 process addGenomeNameToScaffold {
     label "posix"
+    tag { label }
 
     input:
     set val(label), file(fasta), file(gff) from genomes4genomedb
@@ -481,16 +480,18 @@ process addGenomeNameToScaffold {
 
     """
     LABEL=\$(basename ${label})
-    sed "s/>\\s*/>\${LABEL}./g" < ${fasta} > genome.fasta
+    # Use tilde because slash screws with nextflow commenting out.
+    sed "s~>\\s*~>\${LABEL}.~g" < ${fasta} > genome.fasta
     """
 }
+ */
 
 
 /*
  * Combine all genomes into a single fasta file.
- */
 combinedGenomeFasta = genomesWithNames
     .collectFile(name: "genomes.fasta", storeDir: "sequences")
+ */
 
 
 /*
