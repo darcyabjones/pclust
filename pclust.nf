@@ -17,10 +17,11 @@ def helpMessage() {
     abaaab
 
     Mandatory Arguments:
-      --genomes               description
+      --proteins               description
 
     Options:
-      --non-existant          description
+      --nomsa          description
+      --notree         description
 
     Outputs:
 
@@ -32,71 +33,15 @@ if (params.help){
     exit 0
 }
 
-params.genomes = "$baseDir/data/*.{fasta,gff3}"
-genomes = Channel.fromFilePairs( params.genomes, flat: true )
 
+params.nomsa = false
+params.notree = false
 
-/*
- * Tidy GFF3s so that genometools doesn't panic.
- */
-process tidyGFFs {
-    label "genometools"
-    tag { label }
-
-    input:
-    set val(label), file(fasta), file(gff) from genomes
-
-    output:
-    set val(label), file(fasta), file("${gff.baseName}_tidied.gff3") into genomesTidied
-
-    """
-    gt gff3 \
-      -tidy \
-      -sort \
-      "${gff}" \
-    | gt gff3 \
-      -tidy \
-      -sort \
-    > "${gff.baseName}_tidied.gff3"
-    """
+if ( params.nomsa ) {
+    params.notree = true
 }
 
-genomesTidied.tap { genomes4proteindb; genomes4genomedb }
-
-
-/*
- * Extract protein sequences from genomes and GFF.
- */
-process extractProteins {
-    label "genometools"
-    tag { label }
-
-    input:
-    set val(label), file(fasta), file(gff) from genomes4proteindb
-
-    output:
-    file "${label}.faa" into proteins
-
-    """
-    gt extractfeat \
-      -type CDS \
-      -translate \
-      -matchdescstart \
-      -join \
-      -retainids \
-      -seqfile "${fasta}" \
-      "${gff}" \
-    | sed "s/>\\s*/>${label}./g" \
-    > "${label}.faa"
-    """
-}
-
-
-/*
- * Combine all proteins into a single fasta file.
- */
-combinedFasta = proteins.collectFile(name: "proteins.faa", storeDir: "sequences")
-
+proteins = Channel.fromPath( params.proteins )
 
 /*
  * Create the mmseqs2 sequence database
@@ -106,7 +51,7 @@ process createSequenceDB {
     publishDir "sequences"
 
     input:
-    file fasta from combinedFasta
+    file fasta from proteins
 
     output:
     file "proteins" into seq
@@ -117,84 +62,13 @@ process createSequenceDB {
     """
 }
 
-seq.into { seq4Dedup; seq4DedupExtract }
 
-
-/*
- * Select only unique sequences to cluster.
- */
-process clusterDedup {
-    label 'mmseqs'
-    publishDir "clusters"
-
-    input:
-    file "sequence" from seq4Dedup
-
-    output:
-    file "dedup" into dedupClu
-    file "dedup.tsv" into dedupCluTSV
-
-    """
-    mmseqs clusthash sequence/db result --threads ${task.cpus} --min-seq-id 1.0
-
-    mkdir -p dedup
-    mmseqs clust sequence/db result dedup/db --threads ${task.cpus}
-
-    mmseqs createtsv sequence/db sequence/db dedup/db dedup.tsv --threads ${task.cpus}
-    sed -i '1i cluster\tmember' dedup.tsv
-    """
-}
-
-dedupClu.set { dedupClu4Extract }
-
-
-/*
- * Select only unique sequences to cluster.
- */
-process getDedupSequences {
-    label 'mmseqs'
-    publishDir "sequences"
-
-    input:
-    file "sequence" from seq4DedupExtract
-    file "cluster" from dedupClu4Extract
-
-    output:
-    file "dedup.fasta" into dedupSeqFasta
-
-    """
-    mmseqs result2repseq sequence/db cluster/db dedup --threads ${task.cpus}
-    mmseqs result2flat sequence/db sequence/db dedup dedup.fasta --use-fasta-header
-    """
-}
-
-
-/*
- * Create the mmseqs2 sequence database
- */
-process createDedupDB {
-    label 'mmseqs'
-    publishDir "sequences"
-
-    input:
-    file fasta from dedupSeqFasta
-
-    output:
-    file "dedup" into dedupSeq
-
-    """
-    mkdir -p dedup
-    mmseqs createdb "${fasta}" dedup/db --max-seq-len 14000
-    """
-}
-
-dedupSeq.into {
-    dedupSeq4Cascade;
-    dedupSeq4Profile;
-    dedupSeq4CascadeStats;
-    dedupSeq4ProfileStats;
-    dedupSeq4MmseqsMSA;
-    dedupSeq4GenomeSearch;
+seq.into {
+    seq4Cascade;
+    seq4Profile;
+    seq4CascadeStats;
+    seq4ProfileStats;
+    seq4MmseqsMSA;
 }
 
 
@@ -206,7 +80,7 @@ process clusterCascade {
     publishDir "clusters"
 
     input:
-    file "dedup" from dedupSeq4Cascade
+    file "seq" from seq4Cascade
 
     output:
     file "cascade" into cascadeClu
@@ -216,7 +90,7 @@ process clusterCascade {
 
     mkdir -p tmp
     mmseqs cluster \
-      dedup/db \
+      seq/db \
       cascade/db \
       tmp \
       --threads ${task.cpus} \
@@ -243,7 +117,7 @@ process clusterProfile {
 
     input:
     file "cascade" from cascadeClu4Profile
-    file "dedup" from dedupSeq4Profile
+    file "seq" from seq4Profile
 
     output:
     file "profile" into profileClu
@@ -252,8 +126,8 @@ process clusterProfile {
     # Create profiles for each cluster.
     # Generates the profile_consensus file too.
     mmseqs result2profile \
-      dedup/db \
-      dedup/db \
+      seq/db \
+      seq/db \
       cascade/db \
       profile1 \
       --threads ${task.cpus}
@@ -283,7 +157,7 @@ process clusterProfile {
     # Merge the original clusters with the new ones to get all sequences back.
     mkdir -p profile
     mmseqs mergeclusters \
-      dedup/db \
+      seq/db \
       profile/db \
       cascade/db \
       profile1_clusters_consensus \
@@ -294,7 +168,6 @@ process clusterProfile {
 profileClu.into {
     profileClu4Stats;
     profileClu4MSA;
-    profileClu4GenomeSearch;
 }
 
 
@@ -308,7 +181,7 @@ process extractCascadeClusterStats {
 
     input:
     file clusters from cascadeClu4Stats
-    file seq from dedupSeq4CascadeStats
+    file seq from seq4CascadeStats
 
     output:
     file "${clusters}.tsv" into cascadeCluTSV
@@ -330,7 +203,7 @@ process extractProfileClusterStats {
 
     input:
     file clusters from profileClu4Stats
-    file seq from dedupSeq4ProfileStats
+    file seq from seq4ProfileStats
 
     output:
     file "${clusters}.tsv" into profileCluTSV
@@ -350,7 +223,6 @@ process joinClusterStats {
     publishDir "clusters"
 
     input:
-    file "dedup.tsv" from dedupCluTSV
     file "cascade.tsv" from cascadeCluTSV
     file "profile.tsv" from profileCluTSV
     file "profile_stats.tsv" from profileCluStats
@@ -360,7 +232,6 @@ process joinClusterStats {
 
     """
     join_clusters.R \
-      dedup.tsv \
       cascade.tsv \
       profile.tsv \
       profile_stats.tsv \
@@ -369,206 +240,105 @@ process joinClusterStats {
 }
 
 
-/*
- * Extract sequences from clusters.
- */
-process getMmseqsMSA {
-    label 'mmseqs'
+if ( !params.nomsa ) {
+    /*
+     * Extract sequences from clusters.
+     */
+    process getMmseqsMSA {
+        label 'mmseqs'
 
-    input:
-    file "profile" from profileClu4MSA
-    file "dedup" from dedupSeq4MmseqsMSA
+        input:
+        file "profile" from profileClu4MSA
+        file "seq" from seq4MmseqsMSA
 
-    output:
-    file "msa.fastalike" into msaFastaLike
+        output:
+        file "msa.fastalike" into msaFastaLike
 
-    """
-    mmseqs result2msa \
-      dedup/db \
-      dedup/db \
-      profile/db \
-      msa \
-      --threads ${task.cpus}
+        """
+        mmseqs result2msa \
+          seq/db \
+          seq/db \
+          profile/db \
+          msa \
+          --threads ${task.cpus}
 
-    mmseqs result2flat \
-      dedup/db \
-      dedup/db \
-      msa \
-      msa.fastalike
-    """
+        mmseqs result2flat \
+          seq/db \
+          seq/db \
+          msa \
+          msa.fastalike
+        """
+    }
+
+
+    /*
+     * Extract the individual fasta sequences from the fasta-like file.
+     */
+    process getMmseqsMSAFastas {
+        label "python3"
+        publishDir "msas/mmseqs"
+
+        input:
+        file fastalike from msaFastaLike
+
+        output:
+        file "*.fasta" into mmseqsMsas
+
+        """
+        extract_fastalike.py "${fastalike}"
+        """
+    }
+
+
+    /*
+     * Refine the fast MSAs from mmseqs using muscle
+     * The issue with the regular mmseqs MSAs is that it can't have gaps in the
+     * seed sequence, muscle should refit that.
+     */
+    process refineMSAs {
+        label "muscle"
+        publishDir "msas/muscle"
+        tag { fasta.baseName }
+
+        input:
+        file fasta from mmseqsMsas.flatten()
+
+        output:
+        file "${fasta.baseName}.faa" into refinedMsas
+
+        """
+        NSEQS=\$(grep -c ">" ${fasta})
+
+        if [ "\${NSEQS}" -lt "2" ]; then
+          cp "${fasta}" "${fasta.baseName}.faa"
+        else
+          muscle \
+            -in "${fasta}" \
+            -out "${fasta.baseName}.faa" \
+            -seqtype protein \
+            -refine
+        fi
+        """
+    }
 }
 
 
-/*
- * Extract the individual fasta sequences from the fasta-like file.
- */
-process getMmseqsMSAFastas {
-    label "python3"
-    publishDir "msas/mmseqs"
+if ( !params.notree ) {
+    /*
+     * Estimate trees using the MSAs
+     */
+    process estimateTrees {
+        label "fasttree"
+        publishDir "msas/trees"
 
-    input:
-    file fastalike from msaFastaLike
+        input:
+        file msa from refinedMsas
 
-    output:
-    file "*.fasta" into mmseqsMsas
+        output:
+        file "${msa.baseName}.nwk" into indivTrees
 
-    """
-    extract_fastalike.py "${fastalike}"
-    """
+        """
+        FastTree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
+        """
+    }
 }
-
-
-/*
- * Refine the fast MSAs from mmseqs using muscle
- * The issue with the regular mmseqs MSAs is that it can't have gaps in the
- * seed sequence, muscle should refit that.
- */
-process refineMSAs {
-    label "muscle"
-    publishDir "msas/muscle"
-    tag { fasta.baseName }
-
-    input:
-    file fasta from mmseqsMsas.flatten()
-
-    output:
-    file "${fasta.baseName}.faa" into refinedMsas
-
-    """
-    NSEQS=\$(grep -c ">" ${fasta})
-
-    if [ "\${NSEQS}" -lt "2" ]; then
-      cp "${fasta}" "${fasta.baseName}.faa"
-    else
-      muscle \
-        -in "${fasta}" \
-        -out "${fasta.baseName}.faa" \
-        -seqtype protein \
-        -refine
-    fi
-    """
-}
-
-
-/*
- * Estimate trees using the MSAs
- */
-process estimateTrees {
-    label "fasttree"
-    publishDir "msas/trees"
-
-    input:
-    file msa from refinedMsas
-
-    output:
-    file "${msa.baseName}.nwk" into indivTrees
-
-    """
-    FastTree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
-    """
-}
-
-
-/*
- * Add the genome name to the scaffold names in the genome fasta.
-process addGenomeNameToScaffold {
-    label "posix"
-    tag { label }
-
-    input:
-    set val(label), file(fasta), file(gff) from genomes4genomedb
-
-    output:
-    file "genome.fasta" into genomesWithNames
-
-    """
-    LABEL=\$(basename ${label})
-    # Use tilde because slash screws with nextflow commenting out.
-    sed "s~>\\s*~>\${LABEL}.~g" < ${fasta} > genome.fasta
-    """
-}
- */
-
-
-/*
- * Combine all genomes into a single fasta file.
-combinedGenomeFasta = genomesWithNames
-    .collectFile(name: "genomes.fasta", storeDir: "sequences")
- */
-
-
-/*
- * Construct genomes database
-process createGenomeSequenceDB {
-    label 'mmseqs'
-    publishDir "sequences"
-
-    input:
-    file fasta from combinedGenomeFasta
-
-    output:
-    file "genomes" into genomeSeq
-
-    """
-    mkdir -p genomes
-    mmseqs createdb "${fasta}" genomes/db --dont-split-seq-by-len
-    """
-}
-
- */
-
-/*
- * Search for the clusters in the original genome sequences.
-process searchGenomes {
-    label 'mmseqs'
-    publishDir "genome_searches"
-
-    input:
-    file "cascade" from profileClu4GenomeSearch
-    file "genomes" from genomeSeq
-    file "dedup" from dedupSeq4GenomeSearch
-
-    output:
-    file "profile_matches.tsv" into searchResults
-
-    """
-    mkdir -p tmp
-
-    # Create profiles for each cluster.
-    mmseqs result2profile \
-      dedup/db \
-      dedup/db \
-      cascade/db \
-      profile \
-      --threads ${task.cpus}
-
-    # Search profile vs genome
-    # Search parameters are slightly more conservative than default.
-    mmseqs search \
-      profile \
-      genomes/db \
-      result \
-      tmp \
-      --threads ${task.cpus} \
-      --realign \
-      --gap-open 15 \
-      --gap-extend 2 \
-      --cov-mode 2 \
-      --rescore-mode 2 \
-      --min-length 20 \
-      --orf-start-mode 1 \
-      --use-all-table-starts true
-
-    # Extract matches from results
-    mmseqs convertalis \
-      profile \
-      genomes/db \
-      result profile_matches.tsv \
-      --threads ${task.cpus} \
-      --format-mode 0 \
-      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen cigar qframe tframe"
-
-    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar\tqframe\ttframe' profile_matches.tsv
-    """
-}
- */

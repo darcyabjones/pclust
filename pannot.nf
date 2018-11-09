@@ -38,6 +38,72 @@ params.seqs = "$baseDir/sequences/dedup.fasta"
 seqs = Channel.fromPath( params.seqs )
 
 
+/*
+ * Create the mmseqs2 sequence database
+ */
+process createSequenceDB {
+    label 'mmseqs'
+    publishDir "sequences"
+
+    input:
+    file fasta from combinedFasta
+
+    output:
+    file "proteins" into seq
+
+    """
+    mkdir -p proteins
+    mmseqs createdb "${fasta}" proteins/db --max-seq-len 14000
+    """
+}
+/*
+ * Select only unique sequences to cluster.
+ */
+process clusterDedup {
+    label 'mmseqs'
+    publishDir "clusters"
+
+    input:
+    file "sequence" from seq4Dedup
+
+    output:
+    file "dedup" into dedupClu
+    file "dedup.tsv" into dedupCluTSV
+
+    """
+    mmseqs clusthash sequence/db result --threads ${task.cpus} --min-seq-id 1.0
+
+    mkdir -p dedup
+    mmseqs clust sequence/db result dedup/db --threads ${task.cpus}
+
+    mmseqs createtsv sequence/db sequence/db dedup/db dedup.tsv --threads ${task.cpus}
+    sed -i '1i cluster\tmember' dedup.tsv
+    """
+}
+
+dedupClu.set { dedupClu4Extract }
+
+
+/*
+ * Select only unique sequences to cluster.
+ */
+process getDedupSequences {
+    label 'mmseqs'
+    publishDir "sequences"
+
+    input:
+    file "sequence" from seq4DedupExtract
+    file "cluster" from dedupClu4Extract
+
+    output:
+    file "dedup.fasta" into dedupSeqFasta
+
+    """
+    mmseqs result2repseq sequence/db cluster/db dedup --threads ${task.cpus}
+    mmseqs result2flat sequence/db sequence/db dedup dedup.fasta --use-fasta-header
+    """
+}
+
 /* Split the channel for reuse.
  * Note that targetp will be split separately into smaller bits because it's
  * temperamental.
