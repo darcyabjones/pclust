@@ -54,6 +54,9 @@ process tidyGFFs {
       -tidy \
       -sort \
       "${gff}" \
+    | gt gff3 \
+      -tidy \
+      -sort \
     > "${gff.baseName}_tidied.gff3"
     """
 }
