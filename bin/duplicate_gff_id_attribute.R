@@ -47,7 +47,7 @@ read_gff <- function(path) {
         phase = col_character(),
         attributes = col_character()
     )
-    return(read_tsv(path, col_names = col_names, col_type = col_types))
+    return(read_tsv(path, col_names = col_names, col_type = col_types, comment = "#"))
 }
 
 gff <- read_gff(gff_path) %>%
