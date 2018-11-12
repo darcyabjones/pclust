@@ -33,7 +33,9 @@ if (params.help){
 }
 
 params.msas = "$baseDir/msas/muscle/*.faa"
-msas = Channel.fromPath(params.msas)
+msas = Channel
+    .fromPath(params.msas)
+    .map { [it.baseName, it] }
 
 //params.dssp = false
 //params.pdb = false
@@ -191,17 +193,18 @@ if ( !params.hhpfam ) {
 process enrichMsas {
     label "hhblits"
     publishDir "msas/enriched"
+    tag { label }
 
     input:
-    file msa from msas
+    set val(label), file("input.faa") from msas
     file "db" from hhunirefDatabase4Enrich
 
     output:
-    file "${msa.baseName}.hhr" into enrichedResults
-    file "${msa.baseName}.a3m" into enrichedMsas
+    set val(label), file("${label}.hhr") into enrichedResults
+    set val(label), file("${label}.a3m") into enrichedMsas
 
     """
-    NSEQS=\$(grep -c "^>" "${msa}")
+    NSEQS=\$(grep -c "^>" "input.faa")
     if [ "\${NSEQS}" -eq "1" ]; then
       MOPT="first"
     else
@@ -209,11 +212,11 @@ process enrichMsas {
     fi
 
     hhblits \
-      -i "${msa}" \
-      -o "${msa.baseName}.hhr" \
-      -oa3m "${msa.baseName}.a3m" \
-      -ohhm "${msa.baseName}.hhm" \
-      -atab "${msa.baseName}.tsv" \
+      -i "input.faa" \
+      -o "${label}.hhr" \
+      -oa3m "${label}.a3m" \
+      -ohhm "${label}.hhm" \
+      -atab "${label}.tsv" \
       -id 90 \
       -cov 60 \
       -M \${MOPT} \
@@ -241,7 +244,7 @@ process createHmmDatabase {
     publishDir "hhsuite"
 
     input:
-    file "*.a3m" from msas4Database.collect()
+    file "*.a3m" from msas4Database.map {l, f -> f} .collect()
 
     output:
     file "clusterdb" into clusterDb
@@ -262,21 +265,22 @@ process createHmmDatabase {
 process searchClusters {
     label "hhblits"
     publishDir "hhsuite/clusters"
+    tag { label }
 
     input:
-    file msa from msas4Search
+    set val(label), file("input.a3m") from msas4Search
     file "db" from clusterDb
 
     output:
-    file "${msa.baseName}_result.hhr" into clusterResults
-    file "${msa.baseName}_result.a3m" into clusterMsas
+    set val(label), file("${label}.hhr") into clusterResults
+    set val(label), file("${label}.a3m") into clusterMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_result.hhr" \
-      -oa3m "${msa.baseName}_result.a3m" \
-      -atab "${msa.baseName}_result.tsv" \
+      -i "input.a3m" \
+      -o "${label}.hhr" \
+      -oa3m "${label}.a3m" \
+      -atab "${label}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
@@ -292,21 +296,22 @@ process searchClusters {
 process searchUniref {
     label "hhblits"
     publishDir "hhsuite/uniref"
+    tag { label }
 
     input:
-    file msa from msas4Uniref
+    set val(label), file("input.a3m") from msas4Uniref
     file "db" from hhunirefDatabase4Search
 
     output:
-    file "${msa.baseName}_result.hhr" into unirefResults
-    file "${msa.baseName}_result.a3m" into unirefMsas
+    set val(label), file("${label}.hhr") into unirefResults
+    set val(label), file("${label}.a3m") into unirefMsas
 
     """
     hhblits \
-      -i "${msa}" \
-      -o "${msa.baseName}_result.hhr" \
-      -oa3m "${msa.baseName}_result.a3m" \
-      -atab "${msa.baseName}_result.tsv" \
+      -i "input.a3m" \
+      -o "${label}.hhr" \
+      -oa3m "${label}.a3m" \
+      -atab "${label}.tsv" \
       -n 1 \
       -M a2m \
       -all \
@@ -323,21 +328,22 @@ process searchUniref {
 process searchPfam {
     label "hhblits"
     publishDir "hhsuite/pfam"
+    tag { label }
 
     input:
-    file msa from msas4Pfam
+    set val(label), file("input.a3m") from msas4Pfam
     file "db" from hhpfamDatabase
 
     output:
-    file "${msa.baseName}_result.hhr" into pfamResults
-    file "${msa.baseName}_result.a3m" into pfamMsas
+    set val(label), file("${label}.hhr") into pfamResults
+    set val(label), file("${label}.a3m") into pfamMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_result.hhr" \
-      -oa3m "${msa.baseName}_result.a3m" \
-      -atab "${msa.baseName}_result.tsv" \
+      -i "input.a3m" \
+      -o "${label}.hhr" \
+      -oa3m "${label}.a3m" \
+      -atab "${label}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
@@ -353,21 +359,22 @@ process searchPfam {
 process searchScop {
     label "hhblits"
     publishDir "hhsuite/scop"
+    tag { label }
 
     input:
-    file msa from msas4Scop
+    set val(label), file("input.a3m") from msas4Scop
     file "db" from hhscopDatabase
 
     output:
-    file "${msa.baseName}_result.hhr" into scopResults
-    file "${msa.baseName}_result.a3m" into scopMsas
+    set val(label), file("${label}.hhr") into scopResults
+    set val(label), file("${label}.a3m") into scopMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_result.hhr" \
-      -oa3m "${msa.baseName}_result.a3m" \
-      -atab "${msa.baseName}_result.tsv" \
+      -i "input.a3m" \
+      -o "${label}.hhr" \
+      -oa3m "${label}.a3m" \
+      -atab "${label}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
@@ -383,21 +390,22 @@ process searchScop {
 process searchPdb {
     label "hhblits"
     publishDir "hhsuite/pdb"
+    tag { label }
 
     input:
-    file msa from msas4Pdb
+    set val(label), file("input.a3m") from msas4Pdb
     file "db" from hhpdbDatabase
 
     output:
-    file "${msa.baseName}_result.hhr" into pdbResults
-    file "${msa.baseName}_result.a3m" into pdbMsas
+    set val(label), file("${label}.hhr") into pdbResults
+    set val(label), file("${label}.a3m") into pdbMsas
 
     """
     hhsearch \
-      -i "${msa}" \
-      -o "${msa.baseName}_result.hhr" \
-      -oa3m "${msa.baseName}_result.a3m" \
-      -atab "${msa.baseName}_result.tsv" \
+      -i "input.a3m" \
+      -o "${label}.hhr" \
+      -oa3m "${label}.a3m" \
+      -atab "${label}.tsv" \
       -M a2m \
       -all \
       -mact 0.4 \
