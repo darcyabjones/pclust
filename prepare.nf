@@ -131,12 +131,12 @@ if ( params.gffs && params.genomes ) {
         set val(label), file("out.tsv") into gffFilenameMaps
 
         """
-        bin/add_filename_to_gff.R "${label}.gff3" out.gff3 out.tsv
+        add_filename_to_gff.R "${label}.gff3" out.gff3 out.tsv
         """
     }
 
     /*
-     * Combine all proteins into a single fasta file.
+     * Combine all map tables into a single file.
      */
     combinedGffMaps = gffFilenameMaps.collectFile(
         name: "gff_id_map.tsv",
@@ -157,7 +157,7 @@ if ( params.gffs && params.genomes ) {
         set val(label), file("input.gff3") from gffsWithFilenames
 
         output:
-        set val(label), file("${label}.gff3") into tidiedGffs
+        set val(label), file("${label}.gff3") into tidiedGffs2
 
         """
         gt gff3 \
@@ -172,7 +172,7 @@ if ( params.gffs && params.genomes ) {
     /*
      * Join gff and genome channels together.
      */
-    genomesGffs = genomesCoded.join(tidiedGffs1, by: 0)
+    genomesGffs = genomes.join(tidiedGffs2, by: 0)
 
     /*
      * Extract protein sequences from genomes and GFF.
@@ -226,7 +226,7 @@ if ( params.gffs && params.genomes ) {
         set val(label), file("${label}.faa") into proteins
 
         """
-        sed "s~>\\s*~>${label}.~g" < input.fasta > "${label}.faa"
+        sed "s~>\\s*~>${label}_~g" < input.fasta > "${label}.faa"
         """
     }
 
@@ -239,7 +239,7 @@ if ( params.gffs && params.genomes ) {
 /*
  * Combine all proteins into a single fasta file.
  */
-combinedFasta = proteins.collectFile(
+combinedFasta = proteins.map {l, f -> f} .collectFile(
     name: "proteins.faa",
     storeDir: "sequences",
     sort: "hash",

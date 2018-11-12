@@ -56,8 +56,8 @@ base <- basename(tools::file_path_sans_ext(gff_path))
 
 gff <- read_gff(gff_path) %>%
     mutate(
-        attributes = gsub("ID=", paste0("ID=", base, "."), attributes) %>%
-            gsub("Parent=", paste0("Parent=", base, "."), .)
+        attributes = gsub("ID=", paste0("ID=", base, "_"), attributes) %>%
+            gsub("Parent=", paste0("Parent=", base, "_"), .)
     ) %>%
     write_tsv(gff_out_path, col_names = FALSE)
 

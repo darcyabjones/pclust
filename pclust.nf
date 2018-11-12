@@ -21,7 +21,8 @@ def helpMessage() {
 
     Options:
       --nomsa          description
-      --notree         description
+      --nomsa_refine          description
+      --tree         description
 
     Outputs:
 
@@ -35,10 +36,15 @@ if (params.help){
 
 
 params.nomsa = false
-params.notree = false
+params.nomsa_refine = false
+params.tree = false
 
 if ( params.nomsa ) {
-    params.notree = true
+    params.nomsa_refine = True
+}
+
+if ( params.nomsa && params.nomsa_refine ) {
+    params.tree = false
 }
 
 proteins = Channel.fromPath( params.proteins )
@@ -288,8 +294,9 @@ if ( !params.nomsa ) {
         extract_fastalike.py "${fastalike}"
         """
     }
+}
 
-
+if ( !params.nomsa_refine ) {
     /*
      * Refine the fast MSAs from mmseqs using muscle
      * The issue with the regular mmseqs MSAs is that it can't have gaps in the
@@ -322,8 +329,13 @@ if ( !params.nomsa ) {
     }
 }
 
+if ( params.tree && !params.nomsa_refine ) {
+    msas4Trees = refinedMsas
+} else if ( params.tree && !params.nomsa ) {
+    msas4Trees = mmseqsMsas
+}
 
-if ( !params.notree ) {
+if ( params.tree ) {
     /*
      * Estimate trees using the MSAs
      */
@@ -332,7 +344,7 @@ if ( !params.notree ) {
         publishDir "msas/trees"
 
         input:
-        file msa from refinedMsas
+        file msa from msas4Trees
 
         output:
         file "${msa.baseName}.nwk" into indivTrees
