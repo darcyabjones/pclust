@@ -41,13 +41,6 @@ params.nomsa = false
 params.nomsa_refine = false
 params.tree = false
 
-if ( params.nomsa ) {
-    params.nomsa_refine = True
-}
-
-if ( params.nomsa && params.nomsa_refine ) {
-    params.tree = false
-}
 
 proteins = Channel.fromPath( params.proteins )
 
@@ -114,7 +107,7 @@ process clusterCascade {
 cascadeClu.into {
     cascadeClu4Profile;
     cascadeClu4Stats;
-    cascadeClu4Msa;
+    cascadeClu4MSA;
 }
 
 /*
@@ -249,9 +242,9 @@ if ( params.profile ) {
         """
     }
 
-    clu4Msas = profileClu4MSA
+    clu4MSAs = profileClu4MSA
 } else {
-    clu4Msas = cascadeClu4Msa
+    clu4MSAs = cascadeClu4MSA
 }
 
 
@@ -263,7 +256,7 @@ if ( !params.nomsa ) {
         label 'mmseqs'
 
         input:
-        file "clusters" from clu4MSA
+        file "clusters" from clu4MSAs
         file "seq" from seq4MmseqsMSA
 
         output:
