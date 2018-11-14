@@ -199,7 +199,7 @@ process gatherSignalp3HMM {
 
     """
     echo "seqid\tsecreted\tcmax\tpos\tpos_decision\tsprob\tsprob_decision" > signalp3_hmm.tsv
-    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" | sed "s/\t$//g" >> signalp3_hmm.tsv
+    cat tables* | grep -v "#" | sed "s/ \\+/\t/g" | sed "s/\t\$//g" >> signalp3_hmm.tsv
     """
 }
 
