@@ -49,13 +49,8 @@ if ( params.gffs && !params.genomes ) {
     exit 1
 }
 
-if ( params.genomes && params.proteins ) {
-    log.info "Hey, I'm not sure if you want me to use proteins or genomes."
-    exit 1
-}
-
-if ( !((params.gffs && params.genomes) || params.genomes || params.proteins) ) {
-    log.info "You must input either gffs+genomes, genomes, or proteins."
+if ( !((params.gffs && params.genomes) || params.proteins) ) {
+    log.info "You must input either gffs+genomes or proteins."
     exit 1
 }
 
@@ -185,7 +180,7 @@ if ( params.gffs && params.genomes ) {
         set val(label), file(fasta), file(gff) from genomesGffs
 
         output:
-        set val(label), file("${label}.faa") into proteins
+        set val(label), file("${label}.faa") into gffProteins
 
         """
         gt extractfeat \
@@ -200,10 +195,12 @@ if ( params.gffs && params.genomes ) {
         """
     }
 
-} else if ( params.genomes ) {
-    log.info "This is a valid option, but it hasn't been implemented yet."
-    exit 1
-} else if ( params.proteins ) {
+} else {
+    gffProteins = Channel.create()
+}
+
+
+if ( params.proteins ) {
     /*
      * Using the protein option we just need to add filenames to sequences.
      */
@@ -223,7 +220,7 @@ if ( params.gffs && params.genomes ) {
         set val(label), file("input.fasta") from raw_proteins
 
         output:
-        set val(label), file("${label}.faa") into proteins
+        set val(label), file("${label}.faa") into proteinProteins
 
         """
         sed "s~>\\s*~>${label}_~g" < input.fasta > "${label}.faa"
@@ -231,10 +228,11 @@ if ( params.gffs && params.genomes ) {
     }
 
 } else {
-    log.info "We should never reach this branch, please email maintainer"
-    exit 1
+    proteinProteins = Channel.create()
 }
 
+
+proteins = gffProteins.concat( proteinProteins )
 
 /*
  * Combine all proteins into a single fasta file.
