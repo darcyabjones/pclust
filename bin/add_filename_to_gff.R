@@ -49,7 +49,7 @@ read_gff <- function(path) {
         phase = col_character(),
         attributes = col_character()
     )
-    return(read_tsv(path, col_names = col_names, col_type = col_types, comment="#"))
+    return(read_tsv(path, col_names = col_names, col_type = col_types, comment = "#", quote = ""))
 }
 
 base <- basename(tools::file_path_sans_ext(gff_path))
@@ -71,4 +71,4 @@ gff %>%
     ) %>%
     select(genome, type, id, original_id) %>%
     filter(!(is.na(id) && is.na(original_id))) %>%
-    write_tsv(out_map_path, col_names = TRUE)
+    write.table(out_map_path, sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
