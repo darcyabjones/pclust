@@ -37,6 +37,11 @@ msas = Channel
     .fromPath(params.msas)
     .map { [it.baseName, it] }
 
+params.nopdb = false
+params.nopfam = false
+params.noscop = false
+params.nouniref = false
+
 //params.dssp = false
 //params.pdb = false
 params.hhpdb = false
@@ -290,126 +295,134 @@ process searchClusters {
 }
 
 
-/*
- * Search for shorter matches in the uniref database.
- */
-process searchUniref {
-    label "hhblits"
-    publishDir "hhsuite/uniref"
-    tag { label }
-
-    input:
-    set val(label), file("input.a3m") from msas4Uniref
-    file "db" from hhunirefDatabase4Search
-
-    output:
-    set val(label), file("${label}.hhr") into unirefResults
-    set val(label), file("${label}.a3m") into unirefMsas
-
-    """
-    hhblits \
-      -i "input.a3m" \
-      -o "${label}.hhr" \
-      -oa3m "${label}.a3m" \
-      -atab "${label}.tsv" \
-      -n 1 \
-      -M a2m \
-      -all \
-      -mact 0.4 \
-      -cpu ${task.cpus} \
-      -d db/uniclust30_2018_08
-    """
+if ( !params.nouniref ) {
+    /*
+     * Search for shorter matches in the uniref database.
+     */
+    process searchUniref {
+        label "hhblits"
+        publishDir "hhsuite/uniref"
+        tag { label }
+    
+        input:
+        set val(label), file("input.a3m") from msas4Uniref
+        file "db" from hhunirefDatabase4Search
+    
+        output:
+        set val(label), file("${label}.hhr") into unirefResults
+        set val(label), file("${label}.a3m") into unirefMsas
+    
+        """
+        hhblits \
+          -i "input.a3m" \
+          -o "${label}.hhr" \
+          -oa3m "${label}.a3m" \
+          -atab "${label}.tsv" \
+          -n 1 \
+          -M a2m \
+          -all \
+          -mact 0.4 \
+          -cpu ${task.cpus} \
+          -d db/uniclust30_2018_08
+        """
+    }
 }
 
 
-/*
- * Search for pfam domains.
- */
-process searchPfam {
-    label "hhblits"
-    publishDir "hhsuite/pfam"
-    tag { label }
-
-    input:
-    set val(label), file("input.a3m") from msas4Pfam
-    file "db" from hhpfamDatabase
-
-    output:
-    set val(label), file("${label}.hhr") into pfamResults
-    set val(label), file("${label}.a3m") into pfamMsas
-
-    """
-    hhsearch \
-      -i "input.a3m" \
-      -o "${label}.hhr" \
-      -oa3m "${label}.a3m" \
-      -atab "${label}.tsv" \
-      -M a2m \
-      -all \
-      -mact 0.4 \
-      -cpu ${task.cpus} \
-      -d db/pfam
-    """
+if ( !params.nopfam ) {
+    /*
+     * Search for pfam domains.
+     */
+    process searchPfam {
+        label "hhblits"
+        publishDir "hhsuite/pfam"
+        tag { label }
+    
+        input:
+        set val(label), file("input.a3m") from msas4Pfam
+        file "db" from hhpfamDatabase
+    
+        output:
+        set val(label), file("${label}.hhr") into pfamResults
+        set val(label), file("${label}.a3m") into pfamMsas
+    
+        """
+        hhsearch \
+          -i "input.a3m" \
+          -o "${label}.hhr" \
+          -oa3m "${label}.a3m" \
+          -atab "${label}.tsv" \
+          -M a2m \
+          -all \
+          -mact 0.4 \
+          -cpu ${task.cpus} \
+          -d db/pfam
+        """
+    }
 }
 
 
-/*
- * Search for SCOP matches.
- */
-process searchScop {
-    label "hhblits"
-    publishDir "hhsuite/scop"
-    tag { label }
-
-    input:
-    set val(label), file("input.a3m") from msas4Scop
-    file "db" from hhscopDatabase
-
-    output:
-    set val(label), file("${label}.hhr") into scopResults
-    set val(label), file("${label}.a3m") into scopMsas
-
-    """
-    hhsearch \
-      -i "input.a3m" \
-      -o "${label}.hhr" \
-      -oa3m "${label}.a3m" \
-      -atab "${label}.tsv" \
-      -M a2m \
-      -all \
-      -mact 0.4 \
-      -cpu ${task.cpus} \
-      -d "db/scop90"
-    """
+if ( !params.noscop ) {
+    /*
+     * Search for SCOP matches.
+     */
+    process searchScop {
+        label "hhblits"
+        publishDir "hhsuite/scop"
+        tag { label }
+    
+        input:
+        set val(label), file("input.a3m") from msas4Scop
+        file "db" from hhscopDatabase
+    
+        output:
+        set val(label), file("${label}.hhr") into scopResults
+        set val(label), file("${label}.a3m") into scopMsas
+    
+        """
+        hhsearch \
+          -i "input.a3m" \
+          -o "${label}.hhr" \
+          -oa3m "${label}.a3m" \
+          -atab "${label}.tsv" \
+          -M a2m \
+          -all \
+          -mact 0.4 \
+          -cpu ${task.cpus} \
+          -d "db/scop90"
+        """
+    }
 }
 
 
-/*
- * Search for PDB matches.
- */
-process searchPdb {
-    label "hhblits"
-    publishDir "hhsuite/pdb"
-    tag { label }
-
-    input:
-    set val(label), file("input.a3m") from msas4Pdb
-    file "db" from hhpdbDatabase
-
-    output:
-    set val(label), file("${label}.hhr") into pdbResults
-    set val(label), file("${label}.a3m") into pdbMsas
-
-    """
-    hhsearch \
-      -i "input.a3m" \
-      -o "${label}.hhr" \
-      -oa3m "${label}.a3m" \
-      -atab "${label}.tsv" \
-      -M a2m \
-      -all \
-      -mact 0.4 \
-      -cpu ${task.cpus} \
-      -d "db/pdb70"
-    """
+if ( !params.nopdb ) {
+    /*
+     * Search for PDB matches.
+     */
+    process searchPdb {
+        label "hhblits"
+        publishDir "hhsuite/pdb"
+        tag { label }
+    
+        input:
+        set val(label), file("input.a3m") from msas4Pdb
+        file "db" from hhpdbDatabase
+    
+        output:
+        set val(label), file("${label}.hhr") into pdbResults
+        set val(label), file("${label}.a3m") into pdbMsas
+    
+        """
+        hhsearch \
+          -i "input.a3m" \
+          -o "${label}.hhr" \
+          -oa3m "${label}.a3m" \
+          -atab "${label}.tsv" \
+          -M a2m \
+          -all \
+          -mact 0.4 \
+          -cpu ${task.cpus} \
+          -d "db/pdb70"
+        """
+    }
 }
