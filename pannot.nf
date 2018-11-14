@@ -56,6 +56,7 @@ process createSequenceDB {
     """
 }
 
+seqdb.into { seqdb4Cluster; seqdb4Extract }
 
 /*
  * Select only unique sequences to cluster.
@@ -65,7 +66,7 @@ process clusterDedup {
     publishDir "annotations"
 
     input:
-    file "sequence" from seqdb
+    file "sequence" from seqdb4Cluster
 
     output:
     file "dedup" into dedupClu
@@ -93,7 +94,7 @@ process getDedupSequences {
     publishDir "annotations"
 
     input:
-    file "sequence" from seq4DedupExtract
+    file "sequence" from seqdb4Extract
     file "cluster" from dedupClu4Extract
 
     output:
