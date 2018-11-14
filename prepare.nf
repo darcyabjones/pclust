@@ -196,7 +196,7 @@ if ( params.gffs && params.genomes ) {
     }
 
 } else {
-    gffProteins = Channel.create()
+    gffProteins = Channel.empty()
 }
 
 
@@ -228,7 +228,7 @@ if ( params.proteins ) {
     }
 
 } else {
-    proteinProteins = Channel.create()
+    proteinProteins = Channel.empty()
 }
 
 
