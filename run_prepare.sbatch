@@ -11,4 +11,4 @@
 
 module load nextflow/18.10.1-bin
 
-nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --genomes "genomes/*.{fasta,gff3}"
+nextflow run -resume -profile pawsey_zeus ./prepare.nf --max_cpus 28 --genomes "data/*.fasta" --gffs "data/*.gff3" --proteins "data/*.faa"

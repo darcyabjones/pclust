@@ -19,7 +19,7 @@ def helpMessage() {
     Mandatory Arguments:
       --genomes               description
       --gffs
-      --protein
+      --proteins
 
     Options:
       --non-existant          description

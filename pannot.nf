@@ -34,7 +34,7 @@ if (params.help){
 
 
 // The unique proteins to run predictions on.
-params.seqs = "$baseDir/sequences/dedup.fasta"
+params.seqs = "$baseDir/sequences/proteins.faa"
 seqs = Channel.fromPath( params.seqs )
 
 
@@ -43,28 +43,29 @@ seqs = Channel.fromPath( params.seqs )
  */
 process createSequenceDB {
     label 'mmseqs'
-    publishDir "sequences"
 
     input:
-    file fasta from combinedFasta
+    file fasta from seqs
 
     output:
-    file "proteins" into seq
+    file "proteins" into seqdb
 
     """
     mkdir -p proteins
     mmseqs createdb "${fasta}" proteins/db --max-seq-len 14000
     """
 }
+
+
 /*
  * Select only unique sequences to cluster.
  */
 process clusterDedup {
     label 'mmseqs'
-    publishDir "clusters"
+    publishDir "annotations"
 
     input:
-    file "sequence" from seq4Dedup
+    file "sequence" from seqdb
 
     output:
     file "dedup" into dedupClu
@@ -89,7 +90,7 @@ dedupClu.set { dedupClu4Extract }
  */
 process getDedupSequences {
     label 'mmseqs'
-    publishDir "sequences"
+    publishDir "annotations"
 
     input:
     file "sequence" from seq4DedupExtract
@@ -108,7 +109,7 @@ process getDedupSequences {
  * Note that targetp will be split separately into smaller bits because it's
  * temperamental.
  */
-seqs.tap { seqs4Targetp }
+dedupSeqFasta.tap { seqs4Targetp }
     .splitFasta(by: 500)
     .into {
         seqs4Effectorp;
