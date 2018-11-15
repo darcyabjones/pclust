@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=28
 #SBATCH --partition=workq
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --account=y95
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=darcy.a.jones@postgrad.curtin.edu.au
