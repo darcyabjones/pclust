@@ -281,6 +281,7 @@ if ( !params.nomsa ) {
 
     /*
      * Extract the individual fasta sequences from the fasta-like file.
+     */
     process getMmseqsMSAFastas {
         label "python3"
         publishDir "msas/mmseqs"
@@ -289,14 +290,14 @@ if ( !params.nomsa ) {
         file fastalike from msaFastaLike
 
         output:
-        file "*.fasta" into mmseqsMsas
+        file "*.fasta" into mmseqsMsas4Refinement
 
         """
         extract_fastalike.py "${fastalike}"
         """
     }
-     */
 
+    /*
     group = false
     lonelyBoys = Channel.create()
     busyBoys = Channel.create()
@@ -318,14 +319,15 @@ if ( !params.nomsa ) {
         .choice( lonelyBoys, busyBoys ) { it[2] <= 1 ? 0 : 1 }
     
     mmseqsMsasLonely = lonelyBoys
-        .collectFile( file: true, storeDir: "msas/mmseqs", sort: false ) {
+        .collectFile( storeDir: "msas/mmseqs", sort: false ) {
             gr, rec, filt -> [ "${gr}.faa", rec ]
         }
 
     mmseqsMsas4Refinement = busyBoys
-        .collectFile( file: true, storeDir: "msas/mmseqs", sort: false ) {
+        .collectFile( storeDir: "msas/mmseqs", sort: false ) {
             gr, rec, filt -> [ "${gr}.faa", rec ]
         }
+    */
 }
 
 if ( !params.nomsa_refine ) {
