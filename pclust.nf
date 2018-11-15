@@ -290,12 +290,44 @@ if ( !params.nomsa ) {
         file fastalike from msaFastaLike
 
         output:
-        file "*.fasta" into mmseqsMsas
+        file "*.fasta" into mmseqsMsas4Refinement
 
         """
         extract_fastalike.py "${fastalike}"
         """
     }
+
+    /*
+    group = false
+    lonelyBoys = Channel.create()
+    busyBoys = Channel.create()
+    
+    msaFastaLike
+        .splitFasta( record: [id: true, sequence: true] )
+        .map { rec ->
+            if (rec.sequence.length() == 0) {
+                group = rec.id
+                filt = false
+            } else {
+                filt = true
+            }
+            [group, sprintf(">%s\n%s", rec.id, rec.sequence), filt]
+        }
+        .filter { gr, rec, filt -> filt}
+        .groupTuple()
+	.map { gr, rec, filt -> [ gr, rec.join(), rec.size() ] }
+        .choice( lonelyBoys, busyBoys ) { it[2] <= 1 ? 0 : 1 }
+    
+    mmseqsMsasLonely = lonelyBoys
+        .collectFile( storeDir: "msas/mmseqs", sort: false ) {
+            gr, rec, filt -> [ "${gr}.faa", rec ]
+        }
+
+    mmseqsMsas4Refinement = busyBoys
+        .collectFile( storeDir: "msas/mmseqs", sort: false ) {
+            gr, rec, filt -> [ "${gr}.faa", rec ]
+        }
+    */
 }
 
 if ( !params.nomsa_refine ) {
@@ -310,23 +342,17 @@ if ( !params.nomsa_refine ) {
         tag { fasta.baseName }
 
         input:
-        file fasta from mmseqsMsas.flatten()
+        file fasta from mmseqsMsas4Refinement
 
         output:
         file "${fasta.baseName}.faa" into refinedMsas
 
         """
-        NSEQS=\$(grep -c ">" ${fasta})
-
-        if [ "\${NSEQS}" -lt "2" ]; then
-          cp "${fasta}" "${fasta.baseName}.faa"
-        else
-          muscle \
-            -in "${fasta}" \
-            -out "${fasta.baseName}.faa" \
-            -seqtype protein \
-            -refine
-        fi
+        muscle \
+          -in "${fasta}" \
+          -out "${fasta.baseName}.faa" \
+          -seqtype protein \
+          -refine
         """
     }
 }
@@ -334,7 +360,7 @@ if ( !params.nomsa_refine ) {
 if ( params.tree && !params.nomsa_refine ) {
     msas4Trees = refinedMsas
 } else if ( params.tree && !params.nomsa ) {
-    msas4Trees = mmseqsMsas
+    msas4Trees = mmseqsMsas4Refinement
 }
 
 if ( params.tree ) {
