@@ -113,9 +113,8 @@ process getDedupSequences {
 dedupSeqFasta
     .splitFasta( record: [id: true, sequence: true] )
     .filter { record -> record.sequence.length() > 30 }
-    .collectFile {
-        sprintf(">%s\n%s", it.id, it.sequence)
-    }
+    .collectFile { sprintf(">%s\n%s", it.id, it.sequence) }
+    .subscribe { println it }
     .tap { seqs4Targetp }
     .splitFasta(by: 500)
     .into {
