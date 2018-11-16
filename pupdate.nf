@@ -84,7 +84,6 @@ process createSequenceDB {
 seq.into {
     seq4Cascade;
     seq4CreateLocalProfile;
-    seq4Profile;
     seq4CascadeStats;
     seq4ProfileStats;
     seq4MmseqsMSA;
@@ -119,7 +118,7 @@ process clusterCascade {
       -s 6 \
       --cluster-steps 3 \
       --cluster-mode 0 \
-      --min-seq-id 0.3
+      --min-seq-id 0.5
     """
 }
 
@@ -150,6 +149,34 @@ process extractCascadeClusterStats {
     script:
     template "mmseqs_cluster_stats.sh"
 }
+    
+
+process createLocalProfile {
+    label "mmseqs"
+    publishDir "clusters"
+    
+    input:
+    file "clusters" from cascadeClu4CreateLocalProfile
+    file "seqs" from seq4CreateLocalProfile
+    
+    output:
+    file "local_profile" into localProfile
+    
+    """
+    mkdir -p local_profile
+    
+    # Create profiles for each cluster.
+    # Generates the profile_consensus file too.
+    mmseqs result2profile \
+      seqs/db \
+      seqs/db \
+      clusters/db \
+      local_profile/db \
+      --threads ${task.cpus}
+    """
+}
+
+localProfile.into { localProfile4Search; localProfile4CreateEnrichedProfile }
 
 
 if ( !params.global_profile ) {
@@ -179,14 +206,14 @@ if ( !params.global_profile ) {
     }
 }
 
-globalProfile.into { globalProfile4Search; globalProfile4ExtractProfile }
+globalProfile.into { globalProfile4Search; globalProfile4CreateEnrichedProfile }
 
 process searchGlobal {
     label "mmseqs"
     publishDir "clusters"
 
     input:
-    file "local_seqs" from seq4SearchGlobal
+    file "local_profile" from localProfile4Search
     file "global_profile" from globalProfile4Search
 
     output:
@@ -196,37 +223,49 @@ process searchGlobal {
     """
     mkdir -p tmp
     mkdir -p search_global
-    mmseqs search local_seqs/db global_profile/db search_global/db tmp
+    mmseqs search \
+      local_profile/db \
+      global_profile/db_consensus \
+      search_global/db \
+      tmp \
+      --max-seqs 5000 \
+      -a \
+      -e 0.00001 \
+      --e-profile 0.01 \
+      -c 0.1 \
+      -s 6.0 \
+      --rescore-mode 1 \
+      --num-iterations 3
 
     mmseqs convertalis \
-      local_seqs/db \
-      global_profile/db \
+      local_profile/db \
+      global_profile/db_consensus \
       search_global/db \
       "search_global.tsv" \
       --threads ${task.cpus} \
       --format-mode 0 \
-      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen cigar"
+      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
 
-    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar' search_global.tsv
+    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' search_global.tsv
     """
 }
 
 
-process createLocalProfile {
+process createEnrichedProfile {
     label "mmseqs"
     publishDir "clusters"
 
     input:
-    file "local_seqs" from seq4CreateLocalProfile
-    file "global_profile" from globalProfile4ExtractProfile
+    file "local_profile" from localProfile4CreateEnrichedProfile
+    file "global_profile" from globalProfile4CreateEnrichedProfile
     file "search_global" from globalSearchResults
 
     output:
-    file "local_profile" into localProfile   
+    file "enriched_profile" into enrichedProfile   
  
     """
-    mkdir -p local_profile
-    mmseqs result2profile local_seqs/db global_profile/db search_global/db local_profile/db
+    mkdir -p enriched_profile
+    mmseqs result2profile local_profile/db global_profile/db_consensus search_global/db enriched_profile/db
     """
 }
 
@@ -240,46 +279,49 @@ process clusterProfile {
     publishDir "clusters"
 
     input:
-    file "local_profile" from localProfile
+    file "enriched_profile" from enrichedProfile
 
     output:
     file "profile" into profileClu
     file "profile_matches.tsv" into profileSearchResults
 
     """
+
     # Search the profiles against the profile consensus sequences.
     # Uses an iterative strategy.
     mkdir -p tmp
     mkdir search_result
     mmseqs search \
-      local_profile/db \
-      local_profile/db_consensus \
+      enriched_profile/db \
+      enriched_profile/db_consensus \
       search_result/db \
       tmp \
       --threads ${task.cpus} \
-      -s 7.0 \
-      -c 0.60 \
+      --max-seqs 5000 \
+      -c 0.1 \
+      -s 6.0 \
       --add-self-matches \
-      --num-iterations 3
+      --num-iterations 1
+      
 
     # Cluster the matches of profiles vs consensus sequences.
     mkdir -p profile
     mmseqs clust \
-      local_profile/db \
+      enriched_profile/db \
       search_result/db \
       profile/db \
       --threads ${task.cpus}
 
     mmseqs convertalis \
-      local_profile/db \
-      local_profile/db \
+      enriched_profile/db \
+      profile/db \
       search_result/db \
       "profile_matches.tsv" \
       --threads ${task.cpus} \
       --format-mode 0 \
-      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen cigar"
+      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
 
-    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar' profile_matches.tsv
+    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' profile_matches.tsv
     """
 }
 
