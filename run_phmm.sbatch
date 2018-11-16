@@ -11,4 +11,4 @@
 
 module load nextflow/18.10.1-bin
 
-nextflow run -resume -profile pawsey_zeus ./phmm.nf --max_cpus 28 --nopfam --msas "msas/mmseqs/*.fasta"
+nextflow run -resume -profile pawsey_zeus ./phmm.nf --max_cpus 28 --nopfam --nouniref --msas "msas/mmseqs/*.fasta"
