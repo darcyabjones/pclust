@@ -106,17 +106,32 @@ process getDedupSequences {
     """
 }
 
+/*
+ * Filter sequences to minimum size
+ */
+process filterSeqSize {
+    label "seqkit"
+    publishDir "annotations"
+
+    input:
+    file "seqs.fasta" from dedupSeqFasta
+
+    output:
+    file "dedup_filtered.fasta" into filteredFasta
+
+    """
+    seqkit seq -m 30 < seqs.fasta > dedup_filtered.fasta
+    """
+}
+
+
 /* Split the channel for reuse.
  * Note that targetp will be split separately into smaller bits because it's
  * temperamental.
  */
-dedupSeqFasta
-    .splitFasta( record: [id: true, sequence: true] )
-    .filter { record -> record.sequence.length() > 30 }
-    .collectFile { sprintf(">%s\n%s", it.id, it.sequence) }
-    .subscribe { println it }
+filteredFasta
     .tap { seqs4Targetp }
-    .splitFasta(by: 500)
+    .splitFasta( by: 500, file: true )
     .into {
         seqs4Effectorp;
         seqs4Signalp3HMM;
@@ -436,7 +451,7 @@ process phobius {
     file "${fasta}.tsv" into phobiusChunkedResults
 
     """
-    sed 's/\\*\$//g' "${fasta}" | phobius -short | tail -n+2 > "${fasta}.tsv"
+    sed 's/\\*\$//g' "${fasta}" | sed '/>/!s/[\\*J]/X/g' | phobius -short | tail -n+2 > "${fasta}.tsv"
     """
 }
 
