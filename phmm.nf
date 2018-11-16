@@ -222,10 +222,11 @@ process enrichMsas {
       -oa3m "${label}.a3m" \
       -ohhm "${label}.hhm" \
       -atab "${label}.tsv" \
+      -n 3 \
       -id 90 \
-      -cov 60 \
       -M \${MOPT} \
       -mact 0.4 \
+      -maxmem 12.0 \
       -cpu ${task.cpus} \
       -d "db/uniclust30_2018_08"
     """

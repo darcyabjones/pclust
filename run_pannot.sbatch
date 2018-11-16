@@ -11,4 +11,4 @@
 
 module load nextflow/18.10.1-bin
 
-nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --nomsa_refine --proteins "sequences/proteins.faa"
+nextflow run -resume -profile pawsey_zeus ./pannot.nf --max_cpus 28 --seqs "sequences/proteins.faa"

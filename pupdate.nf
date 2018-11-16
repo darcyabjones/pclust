@@ -9,7 +9,7 @@ vim: syntax=groovy
 def helpMessage() {
     log.info"""
     =================================
-    pclust/pclust
+    pclust/pupdate
     =================================
 
     Usage:
@@ -17,13 +17,9 @@ def helpMessage() {
     abaaab
 
     Mandatory Arguments:
-      --proteins               description
-
-    Options:
-      --profile
-      --nomsa          description
-      --nomsa_refine          description
-      --tree         description
+      --proteins              description
+      --clusters
+      --seqdb
 
     Outputs:
 
@@ -35,14 +31,11 @@ if (params.help){
     exit 0
 }
 
-
-params.profile = false
 params.nomsa = false
-params.nomsa_refine = false
-params.tree = false
-
 
 proteins = Channel.fromPath( params.proteins )
+clusters = Channel.fromPath( params.clusters )
+seqdb = Channel.fromPath( params.seqdb )
 
 /*
  * Create the mmseqs2 sequence database
@@ -131,127 +124,140 @@ process extractCascadeClusterStats {
     template "mmseqs_cluster_stats.sh"
 }
 
+/*
+ * Perform the second clustering pass using sequence profiles.
+ * This gets clusters down to about 10%-20% identity.
+ */
+process clusterProfile {
+    label 'mmseqs'
+    publishDir "clusters"
 
-if ( params.profile ) {
-    /*
-     * Perform the second clustering pass using sequence profiles.
-     * This gets clusters down to about 10%-20% identity.
-     */
-    process clusterProfile {
-        label 'mmseqs'
-        publishDir "clusters"
+    input:
+    file "cascade" from cascadeClu4Profile
+    file "seq" from seq4Profile
+    file "global_clusters" from clusters
+    file "global_seqs" from seqdb
 
-        input:
-        file "cascade" from cascadeClu4Profile
-        file "seq" from seq4Profile
+    output:
+    file "profile" into profileClu
 
-        output:
-        file "profile" into profileClu
+    """
+    # Create profiles for each cluster.
+    # Generates the profile_consensus file too.
+    mmseqs result2profile \
+      global_seqs/db \
+      global_seqs/db \
+      global_clusters/db \
+      profile_global \
+      --threads ${task.cpus}
 
-        """
-        # Create profiles for each cluster.
-        # Generates the profile_consensus file too.
-        mmseqs result2profile \
-          seq/db \
-          seq/db \
-          cascade/db \
-          profile1 \
-          --threads ${task.cpus}
+    # Create profiles for each cluster.
+    # Generates the profile_consensus file too.
+    mmseqs result2profile \
+      seq/db \
+      seq/db \
+      cascade/db \
+      profile_local \
+      --threads ${task.cpus}
 
-        # Search the profiles against the profile consensus sequences.
-        # Uses an iterative strategy.
-        mkdir -p tmp
-        mmseqs search \
-          profile1 \
-          profile1_consensus \
-          result \
-          tmp \
-          --threads ${task.cpus} \
-          -s 7.0 \
-          -c 0.70 \
-          --add-self-matches \
-          --num-iterations 2
+    # Search the profiles against the profile consensus sequences.
+    # Uses an iterative strategy.
+    mkdir -p tmp
+    mmseqs search \
+      profile_global \
+      profile_local \
+      result1 \
+      tmp \
+      --threads ${task.cpus} \
+      -s 7.0 \
+      -c 0.60 \
+      --num-iterations 2
 
-        # Cluster the matches of profiles vs consensus sequences.
-        mmseqs clust \
-          profile1 \
-          result \
-          profile1_clusters_consensus \
-          --threads ${task.cpus}
-
-        # Merge the original clusters with the new ones to get all sequences back.
-        mkdir -p profile
-        mmseqs mergeclusters \
-          seq/db \
-          profile/db \
-          cascade/db \
-          profile1_clusters_consensus \
-          --threads ${task.cpus}
-        """
-    }
-
-    profileClu.into {
-        profileClu4Stats;
-        profileClu4MSA;
-    }
-
-
-    /*
-     * Extract information about each cluster.
-     * E.G. cluster members, representative sequences, alignment statistics.
-     */
-    process extractProfileClusterStats {
-        label 'mmseqs'
-        publishDir "clusters"
-
-        input:
-        file clusters from profileClu4Stats
-        file seq from seq4ProfileStats
-
-        output:
-        file "${clusters}.tsv" into profileCluTSV
-        file "${clusters}_rep.fasta" into profileCluRepFasta
-        file "${clusters}_stats.tsv" into profileCluStats
-
-        script:
-        template "mmseqs_cluster_stats.sh"
-    }
-
-
-    /*
-     * Merge the cluster tables and profile statistics
-     */
-    process joinClusterStats {
-        label 'R'
-        publishDir "clusters"
-
-        input:
-        file "cascade.tsv" from cascadeCluTSV
-        file "profile.tsv" from profileCluTSV
-        file "profile_stats.tsv" from profileCluStats
-
-        output:
-        file "clusters.tsv" into clusterStats
-
-        """
-        join_clusters.R \
-          cascade.tsv \
-          profile.tsv \
-          profile_stats.tsv \
-        > clusters.tsv
-        """
-    }
-
-    clu4MSAs = profileClu4MSA
-} else {
-    clu4MSAs = cascadeClu4MSA
+    """
 }
+    /*
+    # Create profiles for each cluster.
+    # Generates the profile_consensus file too.
+    mmseqs result2profile \
+      seq/db \
+      seq/db \
+      cascade/db \
+      profile_local \
+      --threads ${task.cpus}
+    
+    --add-self-matches \
+    # Cluster the matches of profiles vs consensus sequences.
+    mmseqs clust \
+      profile1 \
+      result \
+      profile1_clusters_consensus \
+      --threads ${task.cpus}
+
+    # Merge the original clusters with the new ones to get all sequences back.
+    mkdir -p profile
+    mmseqs mergeclusters \
+      seq/db \
+      profile/db \
+      cascade/db \
+      profile1_clusters_consensus \
+      --threads ${task.cpus}
+
+profileClu.into {
+    profileClu4Stats;
+    profileClu4MSA;
+}
+*/
+
+/*
+ * Extract information about each cluster.
+ * E.G. cluster members, representative sequences, alignment statistics.
+process extractProfileClusterStats {
+    label 'mmseqs'
+    publishDir "clusters"
+
+    input:
+    file clusters from profileClu4Stats
+    file seq from seq4ProfileStats
+
+    output:
+    file "${clusters}.tsv" into profileCluTSV
+    file "${clusters}_rep.fasta" into profileCluRepFasta
+    file "${clusters}_stats.tsv" into profileCluStats
+
+    script:
+    template "mmseqs_cluster_stats.sh"
+}
+ */
+
+
+/*
+ * Merge the cluster tables and profile statistics
+process joinClusterStats {
+    label 'R'
+    publishDir "clusters"
+
+    input:
+    file "cascade.tsv" from cascadeCluTSV
+    file "profile.tsv" from profileCluTSV
+    file "profile_stats.tsv" from profileCluStats
+
+    output:
+    file "clusters.tsv" into clusterStats
+
+    """
+    join_clusters.R \
+      cascade.tsv \
+      profile.tsv \
+      profile_stats.tsv \
+    > clusters.tsv
+    """
+}
+ */
 
 
 if ( !params.nomsa ) {
     /*
      * Extract sequences from clusters.
-     */
     process getMmseqsMSA {
         label 'mmseqs'
 
@@ -277,11 +283,11 @@ if ( !params.nomsa ) {
           msa.fastalike
         """
     }
+     */
 
 
     /*
      * Extract the individual fasta sequences from the fasta-like file.
-     */
     process getMmseqsMSAFastas {
         label "python3"
         publishDir "msas/mmseqs"
@@ -296,6 +302,7 @@ if ( !params.nomsa ) {
         extract_fastalike.py "${fastalike}"
         """
     }
+     */
 
     /*
     group = false
@@ -330,12 +337,10 @@ if ( !params.nomsa ) {
     */
 }
 
-if ( !params.nomsa_refine ) {
     /*
      * Refine the fast MSAs from mmseqs using muscle
      * The issue with the regular mmseqs MSAs is that it can't have gaps in the
      * seed sequence, muscle should refit that.
-     */
     process refineMSAs {
         label "muscle"
         publishDir "msas/muscle"
@@ -355,18 +360,16 @@ if ( !params.nomsa_refine ) {
           -refine
         """
     }
-}
-
+     */
+/*
 if ( params.tree && !params.nomsa_refine ) {
     msas4Trees = refinedMsas
 } else if ( params.tree && !params.nomsa ) {
     msas4Trees = mmseqsMsas4Refinement
 }
-
-if ( params.tree ) {
+*/
     /*
      * Estimate trees using the MSAs
-     */
     process estimateTrees {
         label "fasttree"
         publishDir "msas/trees"
@@ -381,4 +384,4 @@ if ( params.tree ) {
         FastTree -fastest -quiet < "${msa}" > "${msa.baseName}.nwk"
         """
     }
-}
+     */
