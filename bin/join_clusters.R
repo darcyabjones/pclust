@@ -9,13 +9,13 @@ suppressPackageStartupMessages({
 
 
 usage <- function() {
-    return("join_clusters.R <dedup> <cascade> <profile> <profile_stats>")
+    return("join_clusters.R <cascade> <profile> <profile_stats>")
 }
 
 args <- commandArgs(trailingOnly=TRUE)
 
 # If no args provided, kill it.
-if (length(args) != 4) {
+if (length(args) != 3) {
     print(usage())
     quit(save = "no", status = 1, runLast = FALSE)
 }
@@ -30,29 +30,21 @@ read_cluster <- function(path) {
 }
 
 
-read_clusters <- function(dedup, cascade, profile) {
-    dedup <- read_cluster(dedup) %>%
-        rename(dedup = cluster, gene = member)
-
+read_clusters <- function(cascade, profile) {
     cascade <- read_cluster(cascade) %>%
-        rename(cascade = cluster, dedup = member)
+        rename(cascade = cluster, gene = member)
 
     profile <- read_cluster(profile) %>%
-        rename(profile = cluster, dedup = member)
+        rename(profile = cluster, gene = member)
 
-    joined <- dedup %>%
-        full_join(cascade, by="dedup") %>%
-        full_join(profile, by="dedup")
+    joined <- cascade %>%
+        full_join(profile, by="gene")
 
     return(joined)
 }
 
 
 count_clusters <- function(df) {
-    dedup_count <- df %>%
-        group_by(dedup) %>%
-        summarize(dedup_count = n())
-
     cascade_count <- df %>%
         group_by(cascade) %>%
         summarize(cascade_count = n())
@@ -62,10 +54,9 @@ count_clusters <- function(df) {
         summarize(profile_count = n())
 
     joined <- df %>%
-        left_join(dedup_count, by="dedup") %>%
         left_join(cascade_count, by="cascade") %>%
         left_join(profile_count, by="profile") %>%
-        select(gene, dedup, dedup_count, cascade,
+        select(gene, cascade,
                cascade_count, profile, profile_count)
 
     return(joined)
@@ -93,23 +84,21 @@ read_cluster_stat <- function(path) {
 
 read_cluster_stats <- function(clusters, path) {
     stats <- read_cluster_stat(path) %>%
-        rename(dedup = target) %>%
-        select(-query)
+        rename(gene = query)
 
 
     joined <- clusters %>%
-        left_join(stats, by="dedup")
+        left_join(stats, by="gene")
 
     return(joined)
 }
 
-joined <- read_clusters(args[1], args[2], args[3]) %>%
+joined <- read_clusters(args[1], args[2]) %>%
     count_clusters() %>%
-    read_cluster_stats(args[4]) %>%
+    read_cluster_stats(args[3]) %>%
     arrange(desc(profile_count), profile,
             desc(cascade_count), cascade,
             desc(ident),
-            desc(dedup_count), dedup,
             gene)
 
 # Write to stdout
