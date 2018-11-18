@@ -17,10 +17,22 @@ def helpMessage() {
     abaaab
 
     Mandatory Arguments:
-      --msas               description
+      --msas <glob pattern> Multiple sequence alignements to analyse.
 
     Options:
-      --non-existant          description
+      --enrich              Enrich input MSAs using uniref. 
+      --nopdb               Don't search for matches in PDB
+      --nopfam              Don't search for matches in PFam
+      --noscop              Don't search for matches in SCOP
+      --nouniref            Don't search for matches in uniref
+
+    Database download options:
+      --hhpdb              Use this directory containing hhsuite PDB database.
+      --hhpfam             Use this directory containing hhsuite PFam database.
+      --hhscop             Use this directory containing hhsuite SCOP database.
+      --hhuniref           Use this directory containing hhsuite Uniref database.
+
+      Any of these options will prevent download of db and use path instead.
 
     Outputs:
 
@@ -32,11 +44,9 @@ if (params.help){
     exit 0
 }
 
-params.msas = "$baseDir/msas/muscle/*.faa"
-msas = Channel
-    .fromPath(params.msas)
-    .map { [it.baseName, it] }
+params.msas = false
 
+params.enrich = false
 params.nopdb = false
 params.nopfam = false
 params.noscop = false
@@ -44,10 +54,21 @@ params.nouniref = false
 
 //params.dssp = false
 //params.pdb = false
+
 params.hhpdb = false
 params.hhscop = false
 params.hhuniref = false
 params.hhpfam = false
+
+
+if ( !params.msas ) {
+    log.info "Hey I need some MSAs to use please."
+    exit 1
+}
+
+msas = Channel
+    .fromPath(params.msas)
+    .map { [it.baseName, it] }
 
 /*
 Get the databases ready.
@@ -58,7 +79,7 @@ Downloads them if they don't exist already.
 if ( !params.pdb ) {
     process downloadPDB {
         label "download"
-        storeDir "databases"
+        storeDir "${params.outdir}/databases"
 
         output:
         file "pdb" into pdbDatabase
@@ -84,7 +105,7 @@ if ( !params.pdb ) {
 if ( !params.dssp ) {
     process downloadDSSP {
         label "download"
-        storeDir "databases"
+        storeDir "${params.outdir}/databases"
 
         output:
         file "dssp" into dsspDatabase
@@ -103,7 +124,7 @@ if ( !params.dssp ) {
 if ( !params.hhuniref ) {
     process downloadHHUniref {
         label "download"
-        storeDir "databases"
+        storeDir "${params.outdir}/databases"
 
         output:
         file "hhuniref" into hhunirefDatabase
@@ -129,7 +150,7 @@ hhunirefDatabase.into { hhunirefDatabase4Enrich; hhunirefDatabase4Search }
 if ( !params.hhpdb ) {
     process downloadHHPDB {
         label "download"
-        storeDir "databases"
+        storeDir "${params.outdir}/databases"
 
         output:
         file "hhpdb" into hhpdbDatabase
@@ -151,7 +172,7 @@ if ( !params.hhpdb ) {
 if ( !params.hhscop ) {
     process downloadHHSCOP {
         label "download"
-        storeDir "databases"
+        storeDir "${params.outdir}/databases"
 
         output:
         file "hhscop" into hhscopDatabase
@@ -173,7 +194,7 @@ if ( !params.hhscop ) {
 if ( !params.hhpfam ) {
     process downloadHHPFAM {
         label "download"
-        storeDir "databases"
+        storeDir "${params.outdir}/databases"
 
         output:
         file "hhpfam" into hhpfamDatabase
@@ -192,45 +213,79 @@ if ( !params.hhpfam ) {
 }
 
 
-/*
- * Enrich the MSAs using hmms from uniref.
- */
-process enrichMsas {
-    label "hhblits"
-    publishDir "msas/enriched"
-    tag { label }
+if ( params.enrich ) {
+    /*
+     * Enrich the MSAs using hmms from uniref.
+     */
+    process enrichMsas {
+        label "hhblits"
+        publishDir "${params.outdir}/enriched_msas"
+        tag { label }
+    
+        input:
+        set val(label), file("input.faa") from msas
+        file "db" from hhunirefDatabase4Enrich
+    
+        output:
+        set val(label), file("${label}.hhr") into enrichedResults
+        set val(label), file("${label}.a3m") into enrichedMsas
+    
+        """
+        NSEQS=\$(grep -c "^>" "input.faa")
+        if [ "\${NSEQS}" -eq "1" ]; then
+          MOPT="first"
+        else
+          MOPT="50"
+        fi
+    
+        hhblits \
+          -i "input.faa" \
+          -o "${label}.hhr" \
+          -oa3m "${label}.a3m" \
+          -ohhm "${label}.hhm" \
+          -atab "${label}.tsv" \
+          -n 3 \
+          -id 90 \
+          -M \${MOPT} \
+          -mact 0.4 \
+          -maxmem 12.0 \
+          -cpu ${task.cpus} \
+          -d "db/uniclust30_2018_08"
+        """
+    }
+} else {
+    /*
+     * Convert fasta MSAs to a3m format
+     */
+    process msa2A3m {
+        label "hhblits"
+        tag { label }
 
-    input:
-    set val(label), file("input.faa") from msas
-    file "db" from hhunirefDatabase4Enrich
+        input:
+        set val(label), file("input.faa") from msas
 
-    output:
-    set val(label), file("${label}.hhr") into enrichedResults
-    set val(label), file("${label}.a3m") into enrichedMsas
+        output:
+        set val(label), file("${label}.a3m") into enrichedMsas
 
-    """
-    NSEQS=\$(grep -c "^>" "input.faa")
-    if [ "\${NSEQS}" -eq "1" ]; then
-      MOPT="first"
-    else
-      MOPT="50"
-    fi
+        """
+        NSEQS=\$(grep -c "^>" "input.faa")
+        if [ "\${NSEQS}" -eq "1" ]; then
+          MOPT="first"
+        else
+          MOPT="50"
+        fi
 
-    hhblits \
-      -i "input.faa" \
-      -o "${label}.hhr" \
-      -oa3m "${label}.a3m" \
-      -ohhm "${label}.hhm" \
-      -atab "${label}.tsv" \
-      -n 3 \
-      -id 90 \
-      -M \${MOPT} \
-      -mact 0.4 \
-      -maxmem 12.0 \
-      -cpu ${task.cpus} \
-      -d "db/uniclust30_2018_08"
-    """
+        reformat.pl \
+          fas \
+          a3m \
+          "input.faa" \
+          "${label}.a3m" \
+          -M \${MOPT}
+        """
+    }
 }
+
+
 
 enrichedMsas.into {
     msas4Database;
@@ -247,7 +302,7 @@ enrichedMsas.into {
  */
 process createHmmDatabase {
     label "hhblits"
-    publishDir "hhsuite"
+    publishDir "${params.outdir}/hhsuite"
 
     input:
     file "*.a3m" from msas4Database.map {l, f -> f} .collect()
@@ -270,7 +325,7 @@ process createHmmDatabase {
  */
 process searchClusters {
     label "hhblits"
-    publishDir "hhsuite/clusters"
+    publishDir "${params.outdir}/hhsuite/clusters"
     tag { label }
 
     input:
@@ -302,7 +357,7 @@ if ( !params.nouniref ) {
      */
     process searchUniref {
         label "hhblits"
-        publishDir "hhsuite/uniref"
+        publishDir "${params.outdir}/hhsuite/uniref"
         tag { label }
     
         input:
@@ -336,7 +391,7 @@ if ( !params.nopfam ) {
      */
     process searchPfam {
         label "hhblits"
-        publishDir "hhsuite/pfam"
+        publishDir "${params.outdir}/hhsuite/pfam"
         tag { label }
     
         input:
@@ -369,7 +424,7 @@ if ( !params.noscop ) {
      */
     process searchScop {
         label "hhblits"
-        publishDir "hhsuite/scop"
+        publishDir "${params.outdir}/hhsuite/scop"
         tag { label }
     
         input:
@@ -402,7 +457,7 @@ if ( !params.nopdb ) {
      */
     process searchPdb {
         label "hhblits"
-        publishDir "hhsuite/pdb"
+        publishDir "${params.outdir}/hhsuite/pdb"
         tag { label }
     
         input:

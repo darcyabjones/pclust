@@ -20,7 +20,8 @@ def helpMessage() {
       --seqs               description
 
     Options:
-      --non-existant          description
+      --nodedup
+      --min_size
 
     Outputs:
 
@@ -32,96 +33,111 @@ if (params.help){
     exit 0
 }
 
+params.seqs = false
+params.nodedup = false
+params.min_size = false
 
-// The unique proteins to run predictions on.
-params.seqs = "$baseDir/sequences/proteins.faa"
-seqs = Channel.fromPath( params.seqs )
-
-
-/*
- * Create the mmseqs2 sequence database
- */
-process createSequenceDB {
-    label 'mmseqs'
-
-    input:
-    file fasta from seqs
-
-    output:
-    file "proteins" into seqdb
-
-    """
-    mkdir -p proteins
-    mmseqs createdb "${fasta}" proteins/db --max-seq-len 14000
-    """
+if ( !params.seqs ) {
+    log.info "I need some sequences to work with please."
+    exit 1
 }
 
-seqdb.into { seqdb4Cluster; seqdb4Extract }
 
-/*
- * Select only unique sequences to cluster.
- */
-process clusterDedup {
-    label 'mmseqs'
-    publishDir "annotations"
-
-    input:
-    file "sequence" from seqdb4Cluster
-
-    output:
-    file "dedup" into dedupClu
-    file "dedup.tsv" into dedupCluTSV
-
-    """
-    mmseqs clusthash sequence/db result --threads ${task.cpus} --min-seq-id 1.0
-
-    mkdir -p dedup
-    mmseqs clust sequence/db result dedup/db --threads ${task.cpus}
-
-    mmseqs createtsv sequence/db sequence/db dedup/db dedup.tsv --threads ${task.cpus}
-    sed -i '1i cluster\tmember' dedup.tsv
-    """
+if ( !params.nodedup ) {
+    /*
+     * Create the mmseqs2 sequence database
+     */
+    process createSequenceDB {
+        label 'mmseqs'
+    
+        input:
+        file fasta from Channel.fromPath( params.seqs )
+    
+        output:
+        file "proteins" into seqdb
+    
+        """
+        mkdir -p proteins
+        mmseqs createdb "${fasta}" proteins/db --max-seq-len 14000
+        """
+    }
+    
+    seqdb.into { seqdb4Cluster; seqdb4Extract }
+    
+    /*
+     * Select only unique sequences to cluster.
+     */
+    process clusterDedup {
+        label 'mmseqs'
+        publishDir "${params.outdir}/annotations"
+    
+        input:
+        file "sequence" from seqdb4Cluster
+    
+        output:
+        file "dedup" into dedupClu
+        file "dedup.tsv" into dedupCluTSV
+    
+        """
+        mmseqs clusthash sequence/db result --threads ${task.cpus} --min-seq-id 1.0
+    
+        mkdir -p dedup
+        mmseqs clust sequence/db result dedup/db --threads ${task.cpus}
+    
+        mmseqs createtsv sequence/db sequence/db dedup/db dedup.tsv --threads ${task.cpus}
+        sed -i '1i cluster\tmember' dedup.tsv
+        """
+    }
+    
+    dedupClu.set { dedupClu4Extract }
+    
+    
+    /*
+     * Select only unique sequences to cluster.
+     */
+    process getDedupSequences {
+        label 'mmseqs'
+        publishDir "${params.outdir}/annotations"
+    
+        input:
+        file "sequence" from seqdb4Extract
+        file "cluster" from dedupClu4Extract
+    
+        output:
+        file "dedup.fasta" into seqs
+    
+        """
+        mmseqs result2repseq sequence/db cluster/db dedup --threads ${task.cpus}
+        mmseqs result2flat sequence/db sequence/db dedup dedup.fasta --use-fasta-header
+        """
+    }
+} else {
+    seqs = Channel.fromPath( params.seqs )
 }
 
-dedupClu.set { dedupClu4Extract }
 
-
-/*
- * Select only unique sequences to cluster.
- */
-process getDedupSequences {
-    label 'mmseqs'
-    publishDir "annotations"
-
-    input:
-    file "sequence" from seqdb4Extract
-    file "cluster" from dedupClu4Extract
-
-    output:
-    file "dedup.fasta" into dedupSeqFasta
-
-    """
-    mmseqs result2repseq sequence/db cluster/db dedup --threads ${task.cpus}
-    mmseqs result2flat sequence/db sequence/db dedup dedup.fasta --use-fasta-header
-    """
-}
-
-/*
- * Filter sequences to minimum size
- */
-process filterSeqSize {
-    label "seqkit"
-    publishDir "annotations"
-
-    input:
-    file "seqs.fasta" from dedupSeqFasta
-
-    output:
-    file "dedup_filtered.fasta" into filteredFasta
-
-    """
-    seqkit seq -m 30 < seqs.fasta > dedup_filtered.fasta
-    """
+if ( params.min_size ) {
+    /*
+     * Filter sequences to minimum size
+     */
+    process filterSeqSize {
+        label "seqkit"
+        publishDir "${params.outdir}/annotations"
+    
+        input:
+        file "seqs.fasta" from seqs
+    
+        output:
+        file "dedup_filtered.fasta" into filteredFasta
+    
+        """
+        seqkit seq -m ${params.min_size} < seqs.fasta > dedup_filtered.fasta
+        """
+    }
+    
+    seqs4Split = filteredFasta
+} else {
+    seqs4Split = seqs
 }
 
 
@@ -129,9 +145,9 @@ process filterSeqSize {
  * Note that targetp will be split separately into smaller bits because it's
  * temperamental.
  */
-filteredFasta
+seqs4Split
     .tap { seqs4Targetp }
-    .splitFasta( by: 500, file: true )
+    .splitFasta( by: 1000, file: true )
     .into {
         seqs4Effectorp;
         seqs4Signalp3HMM;
@@ -167,7 +183,7 @@ process effectorp {
  */
 process gatherEffectorp {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from effectorpChunkedResults.collect()
@@ -210,7 +226,7 @@ process signalp3HMM {
  */
 process gatherSignalp3HMM {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from signalp3HMMChunkedResults.collect()
@@ -248,7 +264,7 @@ process signalp3NN {
 /*
  * Combine signalp3 results into file.
 process gatherSignalp3NN {
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from signalp3NNChunkedResults.collect()
@@ -293,7 +309,7 @@ process signalp4 {
  */
 process gatherSignalp4 {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from signalp4ChunkedResults.collect()
@@ -331,7 +347,7 @@ process tmhmm {
  */
 process gatherTmhmm {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from tmhmmChunkedResults.collect()
@@ -384,7 +400,7 @@ process targetp {
  */
 process gatherTargetp {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from targetpChunkedResults.collect()
@@ -422,7 +438,7 @@ process targetpPlant {
  */
 process gatherTargetpPlant {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from targetpPlantChunkedResults.collect()
@@ -461,7 +477,7 @@ process phobius {
  */
 process gatherPhobius {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from phobiusChunkedResults.collect()
@@ -499,7 +515,7 @@ process apoplastp {
  */
 process gatherApoplastp {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from apoplastpChunkedResults.collect()
@@ -545,7 +561,7 @@ process localizerEffector {
  */
 process gatherLocalizerEffector {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from localizerEffectorChunkedResults.collect()
@@ -588,7 +604,7 @@ process localizerPlant {
  */
 process gatherLocalizerPlant {
     label "posix"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "tables" from localizerPlantChunkedResults.collect()
@@ -608,7 +624,7 @@ process gatherLocalizerPlant {
  */
 process combineAnnotations {
     label "R"
-    publishDir "annotations"
+    publishDir "${params.outdir}/annotations"
 
     input:
     file "apoplastp.tsv" from apoplastpResults

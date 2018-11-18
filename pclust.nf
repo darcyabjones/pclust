@@ -9,7 +9,7 @@ vim: syntax=groovy
 def helpMessage() {
     log.info"""
     =================================
-    pclust/pupdate
+    pclust/pclust
     =================================
 
     Usage:
@@ -25,6 +25,10 @@ def helpMessage() {
     Options:
       --trees
       --nomsa
+      --nomsa_refine
+      --enrich_seqs
+      --enrich_db
+      --enrich_msa
 
     Outputs:
 
@@ -36,14 +40,14 @@ if (params.help){
     exit 0
 }
 
+params.seqs = false
+params.db = false
 params.trees = false
 params.nomsa = false
 params.nomsa_refine = false
 params.enrich_db = false
 params.enrich_seqs = false
 params.enrich_msa = false
-params.seqs = false
-params.db = false
 
 
 if ( params.trees && params.nomsa ) {
@@ -125,6 +129,9 @@ if (params.enrich_db) {
 }
 
 
+/*
+ * Perform fast high-identity clustering.
+ */
 process clusterHighId {
     label 'mmseqs'
     publishDir "${params.outdir}/clusters"
@@ -157,8 +164,12 @@ highIdClu.into {
 }
 
 
+/*
+ * Extract representative sequences of high-identity clustering as seq database.
+ */
 process createHighIdSubDB {
     label 'mmseqs'
+    publishDir "${params.outdir}/clusters"
 
     input:
     file "high_id" from highIdClu4CreateHighIdSubDB
@@ -213,6 +224,10 @@ process clusterCascade {
 
 cascadeClu.set { cascadeClu4MergeClusters }
 
+
+/*
+ * Merge the clustering results into single db.
+ */
 process mergeClusters {
     label "mmseqs"
     publishDir "${params.outdir}/clusters"
@@ -304,6 +319,9 @@ if (! enrich ) {
     }
 
     
+    /*
+     * Enrich the sequences by searching a database.
+     */
     process enrichProfile {
         label "mmseqs"
     
@@ -330,10 +348,15 @@ if (! enrich ) {
           -s 7.5 \
           --rescore-mode 1 \
           --num-iterations 3
+
+        rm -rf -- tmp
         """
     }
     
 
+    /*
+     * Convert search results into an enriched profile.
+     */
     process createEnrichedProfile {
         label "mmseqs"
     
@@ -359,7 +382,7 @@ if (! enrich ) {
 
 
 /*
- * Perform the second clustering pass using sequence profiles.
+ * Perform the third clustering pass using sequence profiles.
  * This gets clusters down to about 10%-20% identity.
  */
 process clusterProfile {
@@ -412,6 +435,8 @@ process clusterProfile {
       --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
 
     sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' profile_matches.tsv
+
+    rm -rf -- tmp
     """
 }
 
@@ -470,6 +495,9 @@ process joinClusterStats {
 
 if ( ( !params.nomsa ) && params.enrich_msa ) {
 
+    /*
+     * Create a profile database from the final clusters.
+     */
     process createProfileCluProfile {
         label "mmseqs"
         
@@ -494,6 +522,10 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
         """
     }
 
+
+    /*
+     * Search the enrichment database to enrich msas.
+     */
     process enrichMSAs {
         label "mmseqs"
     
@@ -527,10 +559,10 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
     clu4MSA = profileClu4MSA
 }
 
-if ( !params.nomsa ) {
 
+if ( !params.nomsa ) {
     /*
-     * Extract sequences from clusters.
+     * Extract sequences from clusters/profiles.
      */
     process getMmseqsMSA {
         label 'mmseqs'
@@ -577,6 +609,7 @@ if ( !params.nomsa ) {
         """
     }
 }
+
 
 if ( !params.nomsa_refine && !params.nomsa ) {
     /*
