@@ -41,6 +41,7 @@ params.nomsa = false
 params.nomsa_refine = false
 params.enrich_db = false
 params.enrich_seqs = false
+params.enrich_msa = false
 params.seqs = false
 params.db = false
 
@@ -50,6 +51,10 @@ if ( params.trees && params.nomsa ) {
     exit 1
 }
 
+if ( params.enrich_msa && !(params.enrich_seqs || params.enrich_db)) {
+    log.info "Enriching msas requires a database or the sequences"
+    exit 1
+}
 
 if ( params.db ) {
     seqDB = Channel.fromPath( params.db )
@@ -61,7 +66,7 @@ if ( params.db ) {
      */
     process createSequenceDB {
         label 'mmseqs'
-        publishDir "sequences"
+        publishDir "${params.outdir}/sequences"
     
         input:
         file fasta from proteins
@@ -88,6 +93,7 @@ seqDB.into {
     seqDB4CreateProfile;
     seqDB4ClusterProfile;
     seqDB4ProfileStats;
+    seqDB4CreateProfileCluProfile;   
     seqDB4MmseqsMSA;
 }
 
@@ -101,7 +107,7 @@ if (params.enrich_db) {
 
     process createEnrichSeqsDB {
         label 'mmseqs'
-        publishDir "sequences"
+        publishDir "${params.outdir}/sequences"
 
         input:
         file fasta from enrichSeqs
@@ -121,7 +127,7 @@ if (params.enrich_db) {
 
 process clusterHighId {
     label 'mmseqs'
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
 
     input:
     file "seq" from seqDB4ClusterHighId
@@ -167,7 +173,7 @@ process createHighIdSubDB {
     """
 }
 
-highIdSubDB.into {
+highIdSubDB.set {
     highIdSubDB4ClusterCascade;
 }
 
@@ -209,7 +215,7 @@ cascadeClu.set { cascadeClu4MergeClusters }
 
 process mergeClusters {
     label "mmseqs"
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
 
     input:
     file "seq" from seqDB4MergeClusters
@@ -245,7 +251,7 @@ mergedClu.into {
  */
 process extractCascadeClusterStats {
     label 'mmseqs'
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
 
     input:
     file clusters from cascadeClu4Stats
@@ -263,7 +269,7 @@ process extractCascadeClusterStats {
 
 process createProfile {
     label "mmseqs"
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
     
     input:
     file "clusters" from cascadeClu4CreateProfile
@@ -291,7 +297,11 @@ if (! enrich ) {
     profile.set { profile4Clu }
 } else {
     profile.into { profile4Search; profile4EnrichProfile }
-    enrichSeqsDB.into { enrichSeqsDB4Search; enrichSeqsDB4EnrichProfile }
+    enrichSeqsDB.into {
+        enrichSeqsDB4Search;
+        enrichSeqsDB4EnrichProfile;
+        enrichSeqsDB4enrichMSA;
+    }
 
     
     process enrichProfile {
@@ -354,7 +364,7 @@ if (! enrich ) {
  */
 process clusterProfile {
     label 'mmseqs'
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
 
     input:
     file "input_profile" from profile4Clu
@@ -417,7 +427,7 @@ profileClu.into {
  */
 process extractProfileClusterStats {
     label 'mmseqs'
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
 
     input:
     file clusters from profileClu4Stats
@@ -438,7 +448,7 @@ process extractProfileClusterStats {
  */
 process joinClusterStats {
     label 'R'
-    publishDir "clusters"
+    publishDir "${params.outdir}/clusters"
 
     input:
     file "cascade.tsv" from cascadeCluTSV
@@ -458,7 +468,67 @@ process joinClusterStats {
 }
 
 
+if ( ( !params.nomsa ) && params.enrich_msa ) {
+
+    process createProfileCluProfile {
+        label "mmseqs"
+        
+        input:
+        file "clusters" from profileClu4MSA
+        file "seqs" from seqDB4CreateProfileCluProfile
+        
+        output:
+        file "profile" into profile4EnrichMSAs
+        
+        """
+        mkdir -p profile
+        
+        # Create profiles for each cluster.
+        # Generates the profile_consensus file too.
+        mmseqs result2profile \
+          seqs/db \
+          seqs/db \
+          clusters/db \
+          profile/db \
+          --threads ${task.cpus}
+        """
+    }
+
+    process enrichMSAs {
+        label "mmseqs"
+    
+        input:
+        file "profile" from profile4EnrichMSAs
+        file "enrich_seqs" from enrichSeqsDB4enrichMSA
+    
+        output:
+        file "enrich_matches" into enrichMsaSearchResults 
+    
+        """
+        mkdir -p tmp
+        mkdir -p enrich_matches
+        mmseqs search \
+          profile/db \
+          enrich_seqs/db \
+          enrich_matches/db \
+          tmp \
+          --max-seqs 1000 \
+          -a \
+          -e 0.00001 \
+          --e-profile 0.01 \
+          -c 0.1 \
+          -s 7.5 \
+          --rescore-mode 1 \
+          --num-iterations 3
+        """
+    }
+    clu4MSA = enrichMsaSearchResults
+} else {
+    clu4MSA = profileClu4MSA
+}
+
 if ( !params.nomsa ) {
+
     /*
      * Extract sequences from clusters.
      */
@@ -466,7 +536,7 @@ if ( !params.nomsa ) {
         label 'mmseqs'
 
         input:
-        file "clusters" from profileClu4MSA
+        file "clusters" from clu4MSA
         file "seq" from seqDB4MmseqsMSA
 
         output:
@@ -494,7 +564,7 @@ if ( !params.nomsa ) {
      */
     process getMmseqsMSAFastas {
         label "python3"
-        publishDir "msas/mmseqs"
+        publishDir "${params.outdir}/msas/mmseqs"
 
         input:
         file fastalike from msaFastaLike
@@ -516,7 +586,7 @@ if ( !params.nomsa_refine && !params.nomsa ) {
      */
     process refineMSAs {
         label "muscle"
-        publishDir "msas/muscle"
+        publishDir "${params.outdir}/msas/muscle"
         tag { fasta.baseName }
 
         input:
@@ -552,7 +622,7 @@ if ( params.trees ) {
      */
     process estimateTrees {
         label "fasttree"
-        publishDir "msas/trees"
+        publishDir "${params.outdir}/msas/trees"
         tag { msa.baseName }
 
         input:

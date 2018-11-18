@@ -28,12 +28,13 @@ def main():
     with open(fastalike, "r") as handle:
         _ = next(handle)  # Skip first line
         for line in handle:
+            line = line.strip()
             if line.startswith(">") and check_last_was(current):
                 assert len(current) > 1
 
                 filename = get_block_filename(current)
                 with open(filename, "w") as out_handle:
-                    print("".join(current[:-1]), file=out_handle)
+                    print("\n".join(current[:-1]), file=out_handle)
                 current = []
 
             current.append(line)
@@ -42,7 +43,7 @@ def main():
 
         filename = get_block_filename(current)
         with open(filename, "w") as out_handle:
-            print("".join(current[:-1]), file=out_handle)
+            print("\n".join(current[:-1]), file=out_handle)
 
 
 if __name__ == "__main__":
