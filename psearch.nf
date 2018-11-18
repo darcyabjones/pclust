@@ -37,41 +37,37 @@ if (params.help){
     exit 0
 }
 
-params.global_profile = false
-params.global_clusters = false
-params.global_seqs = false
-params.proteins = false
-params.proteins_db = false
+params.query_profile = false
+params.query_clusters = false
+params.query_seqs = false
+params.target_seqs = false
+params.target_db = false
 
 
 
-if (params.global_profile) {
-    globalProfile = Channel.fromPath( params.global_profile )
-} else if ( params.global_clusters && params.global_seqs ) {
-    globalClusters = Channel.fromPath( params.global_clusters )
-    globalSeqs = Channel.fromPath( params.global_seqs )
-} else {
-    log.info "Need either the global profile or global clusters + seqdb"
+if ( !params.query_profile || !(params.query_clusters && params.query_seqs) ) {
+    log.info "Need either the query profile or query clusters + seqdb"
     exit 1
 }
 
-if (params.proteins_db) {
-    seq = Channel.fromPath( params.proteins_db )
-} else if (params.proteins) {
-    proteins = Channel.fromPath( params.proteins )
+
+if (params.target_db) {
+    targetSeqs = Channel.fromPath( params.target_db )
+} else if (params.target_seqs) {
+    proteins = Channel.fromPath( params.target_seqs )
     
     /*
      * Create the mmseqs2 sequence database
      */
     process createSequenceDB {
         label 'mmseqs'
-        publishDir "sequences"
+        publishDir "${params.outdir}/sequences"
     
         input:
         file fasta from proteins
     
         output:
-        file "proteins" into seq
+        file "proteins" into targetSeqs
     
         """
         mkdir -p proteins
@@ -79,22 +75,30 @@ if (params.proteins_db) {
         """
     }
 } else {
-    log.info "Need either --proteins or --proteins_db"
+    log.info "Need either --target_seqs or --target_db"
     exit 1
 }
 
 
-if ( !params.global_profile ) {
+if ( params.query_profile ) {
+    queryProfile = Channel.fromPath( params.query_profile )
+} else {
+    queryClusters = Channel.fromPath( params.query_clusters )
+    querySeqs = Channel.fromPath( params.query_seqs )
+
+    /*
+     * Create profile to search against target.
+     */
     process createGlobalProfile {
         label "mmseqs"
-        publishDir "clusters"
+        publishDir "${params.outdir}/search"
     
         input:
-        file "clusters" from globalClusters
-        file "seqs" from globalSeqs
+        file "clusters" from queryClusters
+        file "seqs" from querySeqs
     
         output:
-        file "global_profile" into globalProfile
+        file "global_profile" into queryProfile
     
         """
         mkdir -p global_profile
@@ -112,17 +116,20 @@ if ( !params.global_profile ) {
 }
 
 
-process searchGlobal {
+/*
+ * Search the query profile against the target seqs.
+ */
+process searchTarget {
     label "mmseqs"
-    publishDir "clusters"
+    publishDir "${params.outdir}/search"
 
     input:
-    file "seqs" from seq
-    file "profile" from globalProfile
+    file "profile" from queryProfile
+    file "seqs" from targetSeqs
 
     output:
-    file "search" into globalSearchResults 
-    file "search.tsv" into globalSearchResultsTsv
+    file "search" into searchResults 
+    file "search.tsv" into searchResultsTsv
 
     """
     mkdir -p tmp
@@ -151,5 +158,4 @@ process searchGlobal {
     sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar' search.tsv
     """
 }
-
 
