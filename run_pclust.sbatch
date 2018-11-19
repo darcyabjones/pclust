@@ -23,4 +23,4 @@ module load nextflow/18.10.1-bin
 #      --enrich_db
 #      --enrich_msa
 
-nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --nomsa --nomsa_refine --seqs "sequences/proteins.faa" --enrich_db "high_id_db"
+nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --nomsa --nomsa_refine --seqs "sequences/proteins.faa" --enrich_seqs "databases/uniclust50_2018_08/uniclust50_2018_08_consensus.fasta"
