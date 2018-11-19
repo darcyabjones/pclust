@@ -340,15 +340,15 @@ if (! enrich ) {
           enrich_seqs/db \
           enrich_matches/db \
           tmp \
-          --max-seqs 500 \
-          -a \
+          --max-seqs 200 \
           -e 0.00001 \
           --e-profile 0.01 \
-          -c 0.1 \
-          --start-sens 5.0 \
-          -s 7.5 \
+          -c 0.2 \
+          --start-sens 4.5 \
+          --sens-steps 2 \
+          -s 6.5 \
           --rescore-mode 1 \
-          --num-iterations 3
+          --num-iterations 2
 
         rm -rf -- tmp
         """
@@ -408,11 +408,12 @@ process clusterProfile {
       search_result/db \
       tmp \
       --threads ${task.cpus} \
-      --max-seqs 1000 \
+      --max-seqs 300 \
       -c 0.6 \
       --cov-mode 0 \
-      --start-sens 6 \
-      -s 7.5 \
+      --start-sens 5 \
+      --sens-steps 2 \
+      -s 7.0 \
       --cov 0.6 \
       --add-self-matches \
       --num-iterations 2
