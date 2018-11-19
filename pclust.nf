@@ -92,6 +92,7 @@ if ( params.db ) {
 seqDB.into {
     seqDB4ClusterHighId;
     seqDB4CreateHighIdSubDB;
+    seqDB4ClusterCascade;
     seqDB4MergeClusters;
     seqDB4CascadeStats;
     seqDB4CreateProfile;
@@ -196,7 +197,7 @@ process clusterCascade {
     label 'mmseqs'
 
     input:
-    file "seq" from highIdSubDB4ClusterCascade
+    file "seq" from seqDB4ClusterCascade //highIdSubDB4ClusterCascade
 
     output:
     file "cascade" into cascadeClu
@@ -213,21 +214,19 @@ process clusterCascade {
       --min-seq-id 0.3 \
       -c 0.7 \
       --cov-mode 0 \
-      -s 7.5 \
+      -s 6.5 \
       --cluster-steps 5 \
-      --cluster-mode 0 \
-      --max-seqs 100
+      --cluster-mode 0
 
     rm -rf -- tmp
     """
 }
 
-cascadeClu.set { cascadeClu4MergeClusters }
-
+//cascadeClu.set { cascadeClu4MergeClusters }
+cascadeClu.set { mergedClu }
 
 /*
  * Merge the clustering results into single db.
- */
 process mergeClusters {
     label "mmseqs"
     publishDir "${params.outdir}/clusters"
@@ -250,6 +249,7 @@ process mergeClusters {
       cascade_clu/db
     """
 }
+ */
 
 
 mergedClu.into {
@@ -340,11 +340,12 @@ if (! enrich ) {
           enrich_seqs/db \
           enrich_matches/db \
           tmp \
-          --max-seqs 1000 \
+          --max-seqs 500 \
           -a \
           -e 0.00001 \
           --e-profile 0.01 \
           -c 0.1 \
+          --start-sens 5.0 \
           -s 7.5 \
           --rescore-mode 1 \
           --num-iterations 3
@@ -410,6 +411,7 @@ process clusterProfile {
       --max-seqs 1000 \
       -c 0.6 \
       --cov-mode 0 \
+      --start-sens 6 \
       -s 7.5 \
       --cov 0.6 \
       --add-self-matches \
