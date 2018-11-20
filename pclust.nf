@@ -432,7 +432,7 @@ process mergeClusters {
     file "merged" into mergedClu
 
     """
-    mkdir -p cascade
+    mkdir -p merged
 
     mmseqs mergeclusters \
       seq/db \
