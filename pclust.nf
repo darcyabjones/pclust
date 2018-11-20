@@ -436,9 +436,9 @@ process mergeClusters {
 
     mmseqs mergeclusters \
       seq/db \
+      merged/db \
       cascade/db \
-      profile/db \
-      merged/db
+      profile/db
     """
 }
 
