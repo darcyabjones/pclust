@@ -17,11 +17,11 @@ def helpMessage() {
     abaaab
 
     Mandatory Arguments:
-      --proteins              description
-      --proteins_db
-      --global_profile
-      --global_clusters
-      --global_seqs
+      --query_profile              description
+      --query_clusters
+      --query_seqs
+      --target_seqs
+      --target_db
 
     Options:
       --trees
@@ -45,7 +45,7 @@ params.target_db = false
 
 
 
-if ( !params.query_profile || !(params.query_clusters && params.query_seqs) ) {
+if ( !params.query_profile && !(params.query_clusters && params.query_seqs) ) {
     log.info "Need either the query profile or query clusters + seqdb"
     exit 1
 }
@@ -140,8 +140,10 @@ process searchTarget {
       search/db \
       tmp \
       -a \
-      -s 6.0 \
-      --max-seqs 5000 \
+      --start-sens 5.0 \
+      --sens-steps 2 \
+      -s 7.0 \
+      --max-seqs 1000 \
       --e-profile 0.01 \
       --rescore-mode 1 \
       --num-iterations 3
@@ -156,6 +158,8 @@ process searchTarget {
       --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen cigar"
 
     sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen\tcigar' search.tsv
+
+    rm -rf -- tmp
     """
 }
 

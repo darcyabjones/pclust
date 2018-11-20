@@ -10,5 +10,17 @@
 #SBATCH --export=NONE
 
 module load nextflow/18.10.1-bin
+#      --seqs              description
+#      --db
+#      --enrich_seqs
+#      --enrich_db
+#
+#    Options:
+#      --trees
+#      --nomsa
+#      --nomsa_refine
+#      --enrich_seqs
+#      --enrich_db
+#      --enrich_msa
 
-nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --nomsa_refine --proteins "sequences/proteins.faa"
+nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --nomsa_refine --seqs "sequences/proteins.faa" --enrich_seqs "databases/uniclust50_2018_08/uniclust50_2018_08_consensus.fasta" --enrich_msa

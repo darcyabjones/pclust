@@ -47,6 +47,7 @@ params.nomsa = false
 params.nomsa_refine = false
 params.enrich_db = false
 params.enrich_seqs = false
+params.enrich_profile = false
 params.enrich_msa = false
 
 
@@ -92,6 +93,7 @@ if ( params.db ) {
 seqDB.into {
     seqDB4ClusterHighId;
     seqDB4CreateHighIdSubDB;
+    seqDB4ClusterCascade;
     seqDB4MergeClusters;
     seqDB4CascadeStats;
     seqDB4CreateProfile;
@@ -102,12 +104,10 @@ seqDB.into {
 }
 
 
-if (params.enrich_db) {
+if (params.enrich_db && ( params.enrich_profile || params.enrich_msa )) {
     enrichSeqsDB = Channel.fromPath( params.enrich_db )
-    enrich = true
-} else if ( params.enrich_seqs ) {
+} else if ( params.enrich_seqs && ( params.enrich_profile || params.enrich_msa )) {
     enrichSeqs = Channel.fromPath( params.enrich_seqs )
-    enrich = true
 
     process createEnrichSeqsDB {
         label 'mmseqs'
@@ -124,8 +124,9 @@ if (params.enrich_db) {
         mmseqs createdb "${fasta}" enrich_db/db --max-seq-len 14000
         """
     }
-} else {
-    enrich = false
+} else if ( params.enrich_profile || params.enrich_msa ) {
+    log.info "You asked to enrich the profile and/or the msa but didn't provide db to enrich with."
+    exit 1
 }
 
 
@@ -196,7 +197,7 @@ process clusterCascade {
     label 'mmseqs'
 
     input:
-    file "seq" from highIdSubDB4ClusterCascade
+    file "seq" from seqDB4ClusterCascade //highIdSubDB4ClusterCascade
 
     output:
     file "cascade" into cascadeClu
@@ -210,54 +211,25 @@ process clusterCascade {
       cascade/db \
       tmp \
       --threads ${task.cpus} \
-      --min-seq-id 0.3 \
+      --min-seq-id 0.0 \
       -c 0.7 \
       --cov-mode 0 \
       -s 7.5 \
       --cluster-steps 5 \
-      --cluster-mode 0 \
-      --max-seqs 100
+      --cluster-mode 0
 
     rm -rf -- tmp
     """
 }
 
-cascadeClu.set { cascadeClu4MergeClusters }
-
-
-/*
- * Merge the clustering results into single db.
- */
-process mergeClusters {
-    label "mmseqs"
-    publishDir "${params.outdir}/clusters"
-
-    input:
-    file "seq" from seqDB4MergeClusters
-    file "linclust" from highIdClu4MergeClusters
-    file "cascade_clu" from cascadeClu4MergeClusters
-
-    output:
-    file "cascade" into mergedClu
-
-    """
-    mkdir -p cascade
-
-    mmseqs mergeclusters \
-      seq/db \
-      cascade/db \
-      linclust/db \
-      cascade_clu/db
-    """
-}
-
-
-mergedClu.into {
+cascadeClu.into {
     cascadeClu4CreateProfile;
     cascadeClu4Profile;
     cascadeClu4Stats;
     cascadeClu4MSA;
+    cascadeClu4MergeClusters;
 }
+
 
 
 /*
@@ -308,17 +280,17 @@ process createProfile {
 }
 
 
-if (! enrich ) {
-    profile.set { profile4Clu }
-} else {
-    profile.into { profile4Search; profile4EnrichProfile }
+if ( params.enrich_profile || params.enrich_msa ) {
     enrichSeqsDB.into {
         enrichSeqsDB4Search;
         enrichSeqsDB4EnrichProfile;
         enrichSeqsDB4enrichMSA;
     }
+}
 
-    
+if ( params.enrich_profile ) {
+    profile.into { profile4Search; profile4EnrichProfile }
+
     /*
      * Enrich the sequences by searching a database.
      */
@@ -340,14 +312,15 @@ if (! enrich ) {
           enrich_seqs/db \
           enrich_matches/db \
           tmp \
-          --max-seqs 1000 \
-          -a \
+          --max-seqs 200 \
           -e 0.00001 \
           --e-profile 0.01 \
-          -c 0.1 \
-          -s 7.5 \
+          -c 0.2 \
+          --start-sens 5.0 \
+          --sens-steps 2 \
+          -s 7.0 \
           --rescore-mode 1 \
-          --num-iterations 3
+          --num-iterations 2
 
         rm -rf -- tmp
         """
@@ -378,6 +351,8 @@ if (! enrich ) {
         """
     }
     enrichedProfile.set { profile4Clu }
+} else {
+    profile.set { profile4Clu }
 } 
 
 
@@ -407,15 +382,15 @@ process clusterProfile {
       search_result/db \
       tmp \
       --threads ${task.cpus} \
-      --max-seqs 1000 \
-      -c 0.6 \
-      --cov-mode 0 \
-      -s 7.5 \
-      --cov 0.6 \
+      --max-seqs 300 \
+      -c 0.8 \
+      --cov-mode 1 \
+      --start-sens 5 \
+      --sens-steps 2 \
+      -s 7.0 \
       --add-self-matches \
       --num-iterations 2
       
-
     # Cluster the matches of profiles vs consensus sequences.
     mkdir -p profile
     mmseqs clust \
@@ -423,7 +398,7 @@ process clusterProfile {
       search_result/db \
       profile/db \
       --threads ${task.cpus} \
-      --cluster-mode 1
+      --cluster-mode 2
 
     mmseqs convertalis \
       input_profile/db \
@@ -441,7 +416,33 @@ process clusterProfile {
 }
 
 
-profileClu.into {
+/*
+ * Merge the clustering results into single db.
+ */
+process mergeClusters {
+    label "mmseqs"
+    publishDir "${params.outdir}/clusters"
+
+    input:
+    file "seq" from seqDB4MergeClusters
+    file "cascade" from cascadeClu4MergeClusters
+    file "profile" from profileClu
+
+    output:
+    file "merged" into mergedClu
+
+    """
+    mkdir -p cascade
+
+    mmseqs mergeclusters \
+      seq/db \
+      cascade/db \
+      profile/db \
+      merged/db
+    """
+}
+
+mergedClu.into {
     profileClu4Stats;
     profileClu4MSA;
 }
@@ -470,7 +471,6 @@ process extractProfileClusterStats {
 
 /*
  * Merge the cluster tables and profile statistics
- */
 process joinClusterStats {
     label 'R'
     publishDir "${params.outdir}/clusters"
@@ -491,6 +491,7 @@ process joinClusterStats {
     > clusters.tsv
     """
 }
+ */
 
 
 if ( ( !params.nomsa ) && params.enrich_msa ) {
@@ -506,7 +507,7 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
         file "seqs" from seqDB4CreateProfileCluProfile
         
         output:
-        file "profile" into profile4EnrichMSAs
+        file "profile" into profileCluProfile
         
         """
         mkdir -p profile
@@ -522,6 +523,7 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
         """
     }
 
+    profileCluProfile.into { profile4EnrichMSAs; profile4EnrichMSAsResults }
 
     /*
      * Search the enrichment database to enrich msas.
@@ -545,16 +547,45 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
           enrich_matches/db \
           tmp \
           --max-seqs 1000 \
-          -a \
           -e 0.00001 \
           --e-profile 0.01 \
           -c 0.1 \
-          -s 7.5 \
+          --start-sens 5 \
+          --sens-steps 1 \
+          -s 7.0 \
           --rescore-mode 1 \
           --num-iterations 3
+        rm -rf -- tmp
         """
     }
-    clu4MSA = enrichMsaSearchResults
+
+    enrichMsaSearchResults.into { clu4MSA; enrichMsaSearchResults4Results }
+    
+    process enrichMSAsResults {
+        label "mmseqs"
+        publishDir "msas"
+
+        input:
+        file "profile" from profile4EnrichMSAsResults
+        file "matches" from enrichMsaSearchResults4Results
+
+        output:
+        file "enrich_matches.tsv" into enrichedMatches
+
+        """
+        mmseqs convertalis \
+          input_profile/db \
+          input_profile/db_consensus \
+          search_result/db \
+          "enrich_matches.tsv" \
+          --threads ${task.cpus} \
+          --format-mode 0 \
+          --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
+
+        sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' enrich_matches.tsv
+        """
+    }
+
 } else {
     clu4MSA = profileClu4MSA
 }
