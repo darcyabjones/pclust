@@ -246,7 +246,7 @@ if ( params.enrich ) {
           -atab "${label}.tsv" \
           -n 3 \
           -id 90 \
-          -M \${MOPT} \
+          -M first \
           -mact 0.4 \
           -maxmem 12.0 \
           -cpu ${task.cpus} \
@@ -260,6 +260,7 @@ if ( params.enrich ) {
     process msa2A3m {
         label "hhblits"
         tag { label }
+        cpus  1
 
         input:
         set val(label), file("input.faa") from msas
@@ -280,7 +281,7 @@ if ( params.enrich ) {
           a3m \
           "input.faa" \
           "${label}.a3m" \
-          -M \${MOPT}
+          -M first
         """
     }
 }
@@ -312,10 +313,53 @@ process createHmmDatabase {
 
     """
     mkdir -p clusterdb
-    hhsuitedb.py \
-      --ia3m *.a3m \
-      -o clusterdb/db \
-      --cpu ${task.cpus}
+    ls *.a3m > files.dat
+    
+    ffindex_build \
+      -s \
+      clusterdb/clusters_a3m.ffdata \
+      clusterdb/clusters_a3m.ffindex \
+      -f files.dat
+    
+    cd clusterdb
+    
+    ffindex_apply \
+      clusters_a3m.ff{data,index} \
+      -d clusters_hhm.ffdata \
+      -i clusters_hhm.ffindex \
+      -- hhmake -i stdin -o stdout -v 0
+    
+    cstranslate \
+      -A \${HHLIB}/data/cs219.lib \
+      -D \${HHLIB}/data/context_data.lib \
+      -x 0.3 \
+      -c 4 \
+      -f \
+      -b \
+      -I a3m \
+      -i clusters_a3m \
+      -o clusters_cs219
+    
+    ffindex_build -as clusters_cs219.ff{data,index}
+    
+    sort -k3 -n clusters_cs219.ffindex | cut -f1 > sorting.dat
+    ffindex_order \
+      sorting.dat \
+      clusters_hhm.ff{data,index} \
+      clusters_hhm_sorted.ff{data,index}
+    
+    ffindex_order \
+      sorting.dat \
+      clusters_a3m.ff{data,index} \
+      clusters_a3m_sorted.ff{data,index}
+
+    mv clusters_a3m_sorted.ffindex clusters_a3m.ffindex
+    mv clusters_a3m_sorted.ffdata clusters_a3m.ffdata
+    mv clusters_hhm_sorted.ffindex clusters_hhm.ffindex
+    mv clusters_hhm_sorted.ffdata clusters_hhm.ffdata
+ 
+    cd ..
+    rm files.dat
     """
 }
 
@@ -337,7 +381,7 @@ process searchClusters {
     set val(label), file("${label}.a3m") into clusterMsas
 
     """
-    hhsearch \
+    hhblits \
       -i "input.a3m" \
       -o "${label}.hhr" \
       -oa3m "${label}.a3m" \
@@ -346,7 +390,7 @@ process searchClusters {
       -all \
       -mact 0.4 \
       -cpu ${task.cpus} \
-      -d "db/db"
+      -d "db/clusters"
     """
 }
 

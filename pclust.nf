@@ -432,13 +432,13 @@ process mergeClusters {
     file "merged" into mergedClu
 
     """
-    mkdir -p cascade
+    mkdir -p merged
 
     mmseqs mergeclusters \
       seq/db \
+      merged/db \
       cascade/db \
-      profile/db \
-      merged/db
+      profile/db
     """
 }
 
