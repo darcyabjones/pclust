@@ -12,19 +12,45 @@ def helpMessage() {
     pclust/prepare
     =================================
 
+    Prepares predicted proteomes for processing through the pclust pipeline(s).
+    Because we use multiple proteomes in our studies, we need a way of making
+    individual protein ids unique within a proteome and an easy way of finding
+    which species a protein comes from.
+
+    This pipeline adds tags to the start of sequences to make this possible.
+
     Usage:
 
-    abaaab
+    ```bash
+    nextflow run -resume prepare.nf \
+      --genomes "*.fasta" \
+      --gffs "*.gff3" \
+      --proteins "*.faa"
+    ```
 
-    Mandatory Arguments:
-      --genomes               description
-      --gffs
-      --proteins
+    ## Mandatory Arguments
 
-    Options:
-      --non-existant          description
+    ```
+    param                | description
+    --------------------------------------------------
+    `--genomes <fasta>`  | The input genome fasta files.
+
+    `--gffs <gff3>`      | The gff3 files containing genes to extract
+                         | from genomes.
+
+    `--proteins <fasta>` | The protein fasta files to use directly.
+    ```
+
+    Note that either the genomes and gffs must be provided or the proteins
+    must be provided. The pipeline can't run without input, or with only genomes
+    and proteins (no gff).
 
     Outputs:
+
+    * `sequences/gff_id_map.tsv`:
+        The mapping of the original GFF3 ID protein names to the new ones.
+    * `sequences/proteins.faa`:
+        The combined processed fasta protein files.
 
     """.stripIndent()
 }
@@ -142,6 +168,8 @@ if ( params.gffs && params.genomes ) {
 
     /*
      * Tidy GFF3s so that genometools doesn't panic.
+     * For whatever reason, a second tidy is needed to iron out the kinks for
+     * gt.
      * Note that we rename input files to avoid name clashes.
      */
     process tidyGFFs2 {
