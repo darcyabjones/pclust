@@ -1,43 +1,49 @@
-mmseqs createtsv \
-  "${seq}/db" \
-  "${seq}/db" \
-  "${clusters}/db" \
-  "${clusters}.tsv" \
-  --threads ${task.cpus}
+# Params:
+# SEQS
+# CLUSTERS
+# NCPUS
 
-sed -i '1i cluster\tmember' "${clusters}.tsv"
+
+mmseqs createtsv \
+  "${SEQS}/db" \
+  "${SEQS}/db" \
+  "${CLUSTERS}/db" \
+  "${CLUSTERS}.tsv" \
+  --threads ${NCPUS}
+
+sed -i '1i cluster\tmember' "${CLUSTERS}.tsv"
 
 
 mmseqs result2repseq \
-  "${seq}/db" \
-  "${clusters}/db" \
-  "${clusters}_rep" \
-  --threads ${task.cpus}
+  "${SEQS}/db" \
+  "${CLUSTERS}/db" \
+  "${CLUSTERS}_rep" \
+  --threads ${NCPUS}
 
 mmseqs result2flat \
-  "${seq}/db" \
-  "${seq}/db" \
-  "${clusters}_rep" \
-  "${clusters}_rep.fasta" \
+  "${SEQS}/db" \
+  "${SEQS}/db" \
+  "${CLUSTERS}_rep" \
+  "${CLUSTERS}_rep.fasta" \
   --use-fasta-header
 
 
 # Do an all vs centroid alignment for each cluster.
 mmseqs align \
-  "${seq}/db" \
-  "${seq}/db" \
-  "${clusters}/db" \
+  "${SEQS}/db" \
+  "${SEQS}/db" \
+  "${CLUSTERS}/db" \
   align \
   -a \
-  --threads ${task.cpus}
+  --threads ${NCPUS}
 
 mmseqs convertalis \
-  "${seq}/db" \
-  "${seq}/db" \
+  "${SEQS}/db" \
+  "${SEQS}/db" \
   align \
-  "${clusters}_stats.tsv" \
-  --threads ${task.cpus} \
+  "${CLUSTERS}_stats.tsv" \
+  --threads ${NCPUS} \
   --format-mode 0 \
   --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
 
-sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "${clusters}_stats.tsv"
+sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "${CLUSTERS}_stats.tsv"

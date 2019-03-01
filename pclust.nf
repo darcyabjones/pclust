@@ -61,10 +61,18 @@ if ( params.enrich_msa && !(params.enrich_seqs || params.enrich_db)) {
     exit 1
 }
 
+
 if ( params.db ) {
-    seqDB = Channel.fromPath( params.db )
+
+    seqdb = Channel
+        .fromPath( params.db, type: 'dir', checkIfExists: true, glob: false )
+        .first()
+
 } else if ( params.seqs ) {
-    proteins = Channel.fromPath( params.seqs )
+
+    proteins = Channel
+        .fromPath( params.seqs, type: 'file', checkIfExists: true, glob: false )
+        .first()
 
     /*
      * Create the mmseqs2 sequence database
@@ -72,121 +80,57 @@ if ( params.db ) {
     process createSequenceDB {
         label 'mmseqs'
         publishDir "${params.outdir}/sequences"
-    
+
         input:
-        file fasta from proteins
-    
+        file "seqs.fasta" from proteins
+
         output:
-        file "seqdb" into seqDB
-    
-        """
-        mkdir -p seqdb
-        mmseqs createdb "${fasta}" seqdb/db --max-seq-len 14000
-        """
+        file "seqdb" into seqdb
+
+        script:
+        FASTA = "seqs.fasta"
+        OUTDB = "seqdb"
+        template: mmseqs_createdb.sh
     }
+
 } else {
     log.info "Please provide either sequences or the seqdb"
     exit 1
 }
 
 
-seqDB.into {
-    seqDB4ClusterHighId;
-    seqDB4CreateHighIdSubDB;
-    seqDB4ClusterCascade;
-    seqDB4MergeClusters;
-    seqDB4CascadeStats;
-    seqDB4CreateProfile;
-    seqDB4ClusterProfile;
-    seqDB4ProfileStats;
-    seqDB4CreateProfileCluProfile;   
-    seqDB4MmseqsMSA;
-}
-
-
 if (params.enrich_db && ( params.enrich_profile || params.enrich_msa )) {
-    enrichSeqsDB = Channel.fromPath( params.enrich_db )
+
+    enrichdb = Channel
+        .fromPath( params.enrich_db, type: 'dir', checkIfExists: true, glob: false )
+        .first()
+
 } else if ( params.enrich_seqs && ( params.enrich_profile || params.enrich_msa )) {
-    enrichSeqs = Channel.fromPath( params.enrich_seqs )
+
+    enrichSeqs = Channel
+        .fromPath( params.enrich_seqs, type: 'file', checkIfExists: true, glob: false )
+        .first()
+
 
     process createEnrichSeqsDB {
         label 'mmseqs'
         publishDir "${params.outdir}/sequences"
 
         input:
-        file fasta from enrichSeqs
+        file "seqs.fasta" from enrichSeqs
 
         output:
-        file "enrich_db" into enrichSeqsDB
+        file "enrich_db" into enrichdb
 
-        """
-        mkdir -p enrich_db
-        mmseqs createdb "${fasta}" enrich_db/db --max-seq-len 14000
-        """
+        script:
+        FASTA = "seqs.fasta"
+        OUTDB = "enrich_db"
+        template 'mmseqs_createdb.sh'
     }
+
 } else if ( params.enrich_profile || params.enrich_msa ) {
     log.info "You asked to enrich the profile and/or the msa but didn't provide db to enrich with."
     exit 1
-}
-
-
-/*
- * Perform fast high-identity clustering.
- */
-process clusterHighId {
-    label 'mmseqs'
-    publishDir "${params.outdir}/clusters"
-
-    input:
-    file "seq" from seqDB4ClusterHighId
-
-    output:
-    file "high_id" into highIdClu
-
-    """
-    mkdir -p "high_id"
-    mkdir -p "tmp"
-
-    mmseqs linclust \
-      seq/db \
-      high_id/db \
-      tmp \
-      --min-seq-id 0.90 \
-      -c 0.8 \
-      --cov-mode 0
-
-    rm -rf -- tmp
-    """
-}
-
-highIdClu.into {
-    highIdClu4CreateHighIdSubDB;
-    highIdClu4MergeClusters;
-}
-
-
-/*
- * Extract representative sequences of high-identity clustering as seq database.
- */
-process createHighIdSubDB {
-    label 'mmseqs'
-    publishDir "${params.outdir}/clusters"
-
-    input:
-    file "high_id" from highIdClu4CreateHighIdSubDB
-    file "seq" from seqDB4CreateHighIdSubDB
-
-    output:
-    file "high_id_db" into highIdSubDB
-
-    """
-    mkdir -p high_id_db
-    mmseqs createsubdb "high_id/db" "seq/db" "high_id_db/db"
-    """
-}
-
-highIdSubDB.set {
-    highIdSubDB4ClusterCascade;
 }
 
 
@@ -197,39 +141,17 @@ process clusterCascade {
     label 'mmseqs'
 
     input:
-    file "seq" from seqDB4ClusterCascade //highIdSubDB4ClusterCascade
+    file "seq" from seqdb
 
     output:
-    file "cascade" into cascadeClu
+    file "cascade" into cascadeClusters
 
-    """
-    mkdir -p cascade
-
-    mkdir -p tmp
-    mmseqs cluster \
-      seq/db \
-      cascade/db \
-      tmp \
-      --threads ${task.cpus} \
-      --min-seq-id 0.0 \
-      -c 0.7 \
-      --cov-mode 0 \
-      -s 7.5 \
-      --cluster-steps 5 \
-      --cluster-mode 0
-
-    rm -rf -- tmp
-    """
+    script:
+    INDB = "seq"
+    OUTDB = "cascade"
+    NCPUS = task.cpus
+    template mmseqs_cluster_cascade.sh
 }
-
-cascadeClu.into {
-    cascadeClu4CreateProfile;
-    cascadeClu4Profile;
-    cascadeClu4Stats;
-    cascadeClu4MSA;
-    cascadeClu4MergeClusters;
-}
-
 
 
 /*
@@ -241,8 +163,8 @@ process extractCascadeClusterStats {
     publishDir "${params.outdir}/clusters"
 
     input:
-    file clusters from cascadeClu4Stats
-    file seq from seqDB4CascadeStats
+    file "seqs" from seqdb
+    file "clusters" from cascadeClusters
 
     output:
     file "${clusters}.tsv" into cascadeCluTSV
@@ -250,33 +172,31 @@ process extractCascadeClusterStats {
     file "${clusters}_stats.tsv" into cascadeCluStats
 
     script:
+    SEQS = "seqs"
+    CLUSTERS = "clusters"
+    NCPUS = task.cpus
     template "mmseqs_cluster_stats.sh"
 }
-    
+
 
 process createProfile {
     label "mmseqs"
     publishDir "${params.outdir}/clusters"
-    
+
     input:
     file "clusters" from cascadeClu4CreateProfile
-    file "seqs" from seqDB4CreateProfile
-    
+    file "seqs" from seqdb
+
     output:
     file "profile" into profile
-    
-    """
-    mkdir -p profile
-    
-    # Create profiles for each cluster.
-    # Generates the profile_consensus file too.
-    mmseqs result2profile \
-      seqs/db \
-      seqs/db \
-      clusters/db \
-      profile/db \
-      --threads ${task.cpus}
-    """
+
+    script:
+    QUERY = "seqs"
+    TARGET = "seqs"
+    RESULTS = "clusters"
+    OUTDB = "profile"
+    NCPUS = task.cpus
+    template mmseqs_result_to_profiles.sh
 }
 
 
@@ -296,60 +216,46 @@ if ( params.enrich_profile ) {
      */
     process enrichProfile {
         label "mmseqs"
-    
+
         input:
         file "profile" from profile4Search
         file "enrich_seqs" from enrichSeqsDB4Search
-    
+
         output:
         file "enrich_matches" into enrichSearchResults 
-    
-        """
-        mkdir -p tmp
-        mkdir -p enrich_matches
-        mmseqs search \
-          profile/db \
-          enrich_seqs/db \
-          enrich_matches/db \
-          tmp \
-          --max-seqs 200 \
-          -e 0.00001 \
-          --e-profile 0.01 \
-          -c 0.2 \
-          --start-sens 5.0 \
-          --sens-steps 2 \
-          -s 7.0 \
-          --rescore-mode 1 \
-          --num-iterations 2
 
-        rm -rf -- tmp
-        """
+        script:
+        PROFILE = "profile"
+        TARGET = "enrich_seqs"
+        OUTDB = "enrich_matches"
+        NCPUS = task.cpus
+        template mmseqs_search_profile_strict.sh
     }
-    
+
 
     /*
      * Convert search results into an enriched profile.
      */
     process createEnrichedProfile {
         label "mmseqs"
-    
+
         input:
         file "input_profile" from profile4EnrichProfile
         file "enrich_seqs" from enrichSeqsDB4EnrichProfile
         file "enrich_matches" from enrichSearchResults
-    
+
         output:
-        file "enriched_profile" into enrichedProfile   
-     
-        """
-        mkdir -p enriched_profile
-        mmseqs result2profile \
-          input_profile/db \
-          enrich_seqs/db \
-          enrich_matches/db \
-          enriched_profile/db
-        """
+        file "enriched_profile" into enrichedProfile
+
+        script:
+        QUERY = "input_profile"
+        TARGET = "enrich_seqs"
+        RESULTS = "enrich_matches"
+        OUTDB = "enriched_profiles"
+        NCPUS = task.cpus
+        template mmseqs_result_to_profiles.sh
     }
+
     enrichedProfile.set { profile4Clu }
 } else {
     profile.set { profile4Clu }
@@ -371,48 +277,11 @@ process clusterProfile {
     file "profile" into profileClu
     file "profile_matches.tsv" into profileSearchResults
 
-    """
-    # Search the profiles against the profile consensus sequences.
-    # Uses an iterative strategy.
-    mkdir -p tmp
-    mkdir search_result
-    mmseqs search \
-      input_profile/db \
-      input_profile/db_consensus \
-      search_result/db \
-      tmp \
-      --threads ${task.cpus} \
-      --max-seqs 300 \
-      -c 0.8 \
-      --cov-mode 1 \
-      --start-sens 5 \
-      --sens-steps 2 \
-      -s 7.0 \
-      --add-self-matches \
-      --num-iterations 2
-      
-    # Cluster the matches of profiles vs consensus sequences.
-    mkdir -p profile
-    mmseqs clust \
-      input_profile/db \
-      search_result/db \
-      profile/db \
-      --threads ${task.cpus} \
-      --cluster-mode 2
-
-    mmseqs convertalis \
-      input_profile/db \
-      input_profile/db_consensus \
-      search_result/db \
-      "profile_matches.tsv" \
-      --threads ${task.cpus} \
-      --format-mode 0 \
-      --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
-
-    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' profile_matches.tsv
-
-    rm -rf -- tmp
-    """
+    script:
+    INDB = "input_profile"
+    OUTDB = "profile"
+    NCPUS = task.cpus
+    template mmseqs_cluster_profiles.sh
 }
 
 
@@ -456,8 +325,8 @@ process extractProfileClusterStats {
     publishDir "${params.outdir}/clusters"
 
     input:
-    file clusters from profileClu4Stats
-    file seq from seqDB4ProfileStats
+    file "clusters" from profileClu4Stats
+    file "seq" from seqDB4ProfileStats
 
     output:
     file "${clusters}.tsv" into profileCluTSV
@@ -465,6 +334,9 @@ process extractProfileClusterStats {
     file "${clusters}_stats.tsv" into profileCluStats
 
     script:
+    SEQS = "seq"
+    CLUSTERS = "clusters"
+    NCPUS = task.cpus
     template "mmseqs_cluster_stats.sh"
 }
 
@@ -501,26 +373,20 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
      */
     process createProfileCluProfile {
         label "mmseqs"
-        
+
         input:
         file "clusters" from profileClu4MSA
         file "seqs" from seqDB4CreateProfileCluProfile
-        
+
         output:
         file "profile" into profileCluProfile
-        
-        """
-        mkdir -p profile
-        
-        # Create profiles for each cluster.
-        # Generates the profile_consensus file too.
-        mmseqs result2profile \
-          seqs/db \
-          seqs/db \
-          clusters/db \
-          profile/db \
-          --threads ${task.cpus}
-        """
+
+        script:
+        QUERY = "seqs"
+        TARGET = "seqs"
+        RESULTS = "clusters"
+        OUTDB = "profile"
+        template mmseqs_result_to_profile.sh
     }
 
     profileCluProfile.into { profile4EnrichMSAs; profile4EnrichMSAsResults }
@@ -530,37 +396,24 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
      */
     process enrichMSAs {
         label "mmseqs"
-    
+
         input:
         file "profile" from profile4EnrichMSAs
         file "enrich_seqs" from enrichSeqsDB4enrichMSA
-    
+
         output:
         file "enrich_matches" into enrichMsaSearchResults 
-    
-        """
-        mkdir -p tmp
-        mkdir -p enrich_matches
-        mmseqs search \
-          profile/db \
-          enrich_seqs/db \
-          enrich_matches/db \
-          tmp \
-          --max-seqs 1000 \
-          -e 0.00001 \
-          --e-profile 0.01 \
-          -c 0.1 \
-          --start-sens 5 \
-          --sens-steps 1 \
-          -s 7.0 \
-          --rescore-mode 1 \
-          --num-iterations 3
-        rm -rf -- tmp
-        """
+
+        script:
+        PROFILE = "profile"
+        TARGET = "enrich_seqs"
+        OUTDB = "enrich_matches"
+        NCPUS = task.cpus
+        template: mmseqs_search_profile_relaxed.sh
     }
 
     enrichMsaSearchResults.into { clu4MSA; enrichMsaSearchResults4Results }
-    
+
     process enrichMSAsResults {
         label "mmseqs"
         publishDir "msas"
@@ -591,63 +444,13 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
 }
 
 
-if ( !params.nomsa ) {
-    /*
-     * Extract sequences from clusters/profiles.
-     */
-    process getMmseqsMSA {
-        label 'mmseqs'
 
-        input:
-        file "clusters" from clu4MSA
-        file "seq" from seqDB4MmseqsMSA
-
-        output:
-        file "msa.fastalike" into msaFastaLike
-
-        """
-        mmseqs result2msa \
-          seq/db \
-          seq/db \
-          clusters/db \
-          msa \
-          --threads ${task.cpus}
-
-        mmseqs result2flat \
-          seq/db \
-          seq/db \
-          msa \
-          msa.fastalike
-        """
-    }
-
-
-    /*
-     * Extract the individual fasta sequences from the fasta-like file.
-     */
-    process getMmseqsMSAFastas {
-        label "python3"
-        publishDir "${params.outdir}/msas/mmseqs"
-
-        input:
-        file fastalike from msaFastaLike
-
-        output:
-        file "*.fasta" into mmseqsMsas4Refinement
-
-        """
-        extract_fastalike.py "${fastalike}"
-        """
-    }
-}
-
+/*
 
 if ( !params.nomsa_refine && !params.nomsa ) {
-    /*
      * Refine the fast MSAs from mmseqs using muscle
      * The issue with the regular mmseqs MSAs is that it can't have gaps in the
      * seed sequence, muscle should refit that.
-     */
     process refineMSAs {
         label "muscle"
         publishDir "${params.outdir}/msas/muscle"
@@ -678,12 +481,12 @@ if ( !params.nomsa_refine && !params.nomsa ) {
 } else if ( !params.nomsa ) {
     msas4Trees = mmseqsMsas4Refinement.flatten()
 }
+*/
 
 
+/*
 if ( params.trees ) {
-    /*
      * Estimate trees using the MSAs
-     */
     process estimateTrees {
         label "fasttree"
         publishDir "${params.outdir}/msas/trees"
@@ -700,3 +503,4 @@ if ( params.trees ) {
         """
     }
 }
+*/
