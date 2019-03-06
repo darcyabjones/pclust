@@ -43,22 +43,27 @@ if (params.help){
 params.seqs = false
 params.db = false
 params.trees = false
-params.nomsa = false
-params.nomsa_refine = false
 params.enrich_db = false
 params.enrich_seqs = false
 params.enrich_profile = false
 params.enrich_msa = false
-
-
-if ( params.trees && params.nomsa ) {
-    log.info "Cannot construct trees without msas"
-    exit 1
-}
+params.mafft = false
+params.hhdata = false
 
 if ( params.enrich_msa && !(params.enrich_seqs || params.enrich_db)) {
     log.info "Enriching msas requires a database or the sequences"
     exit 1
+}
+
+if ( params.enrich_profile && !(params.enrich_seqs || params.enrich_db)) {
+    log.info "Enriching profiles for clustering requires a database or the sequences"
+    exit 1
+}
+
+if ( params.hhdata ) {
+    hhdata = Channel
+        .fromPath( params.hhdata, type: 'dir', checkIfExists: true, glob: false )
+        .first()
 }
 
 
@@ -90,7 +95,7 @@ if ( params.db ) {
         script:
         FASTA = "seqs.fasta"
         OUTDB = "seqdb"
-        template: mmseqs_createdb.sh
+        template "mmseqs_createdb.sh"
     }
 
 } else {
@@ -125,7 +130,7 @@ if (params.enrich_db && ( params.enrich_profile || params.enrich_msa )) {
         script:
         FASTA = "seqs.fasta"
         OUTDB = "enrich_db"
-        template 'mmseqs_createdb.sh'
+        template "mmseqs_createdb.sh"
     }
 
 } else if ( params.enrich_profile || params.enrich_msa ) {
@@ -150,7 +155,7 @@ process clusterCascade {
     INDB = "seq"
     OUTDB = "cascade"
     NCPUS = task.cpus
-    template mmseqs_cluster_cascade.sh
+    template "mmseqs_cluster_cascade.sh"
 }
 
 
@@ -164,16 +169,16 @@ process extractCascadeClusterStats {
 
     input:
     file "seqs" from seqdb
-    file "clusters" from cascadeClusters
+    file "cascade" from cascadeClusters
 
     output:
-    file "${clusters}.tsv" into cascadeCluTSV
-    file "${clusters}_rep.fasta" into cascadeCluRepFasta
-    file "${clusters}_stats.tsv" into cascadeCluStats
+    file "cascade.tsv" into cascadeClustersTSV
+    file "cascade_rep.fasta" into cascadeClustersRepFasta
+    file "cascade_stats.tsv" into cascadeClustersStats
 
     script:
     SEQS = "seqs"
-    CLUSTERS = "clusters"
+    CLUSTERS = "cascade"
     NCPUS = task.cpus
     template "mmseqs_cluster_stats.sh"
 }
@@ -184,11 +189,11 @@ process createProfile {
     publishDir "${params.outdir}/clusters"
 
     input:
-    file "clusters" from cascadeClu4CreateProfile
+    file "clusters" from cascadeClusters
     file "seqs" from seqdb
 
     output:
-    file "profile" into profile
+    file "profile" into cascadeProfile
 
     script:
     QUERY = "seqs"
@@ -196,20 +201,11 @@ process createProfile {
     RESULTS = "clusters"
     OUTDB = "profile"
     NCPUS = task.cpus
-    template mmseqs_result_to_profiles.sh
+    template "mmseqs_result_to_profile.sh"
 }
 
-
-if ( params.enrich_profile || params.enrich_msa ) {
-    enrichSeqsDB.into {
-        enrichSeqsDB4Search;
-        enrichSeqsDB4EnrichProfile;
-        enrichSeqsDB4enrichMSA;
-    }
-}
 
 if ( params.enrich_profile ) {
-    profile.into { profile4Search; profile4EnrichProfile }
 
     /*
      * Enrich the sequences by searching a database.
@@ -218,18 +214,18 @@ if ( params.enrich_profile ) {
         label "mmseqs"
 
         input:
-        file "profile" from profile4Search
-        file "enrich_seqs" from enrichSeqsDB4Search
+        file "profile" from cascadeProfile
+        file "enrich_seqs" from enrichdb
 
         output:
-        file "enrich_matches" into enrichSearchResults 
+        file "enrich_matches" into enrichedSearchResults 
 
         script:
         PROFILE = "profile"
         TARGET = "enrich_seqs"
         OUTDB = "enrich_matches"
         NCPUS = task.cpus
-        template mmseqs_search_profile_strict.sh
+        template "mmseqs_search_profile_strict.sh"
     }
 
 
@@ -240,9 +236,9 @@ if ( params.enrich_profile ) {
         label "mmseqs"
 
         input:
-        file "input_profile" from profile4EnrichProfile
-        file "enrich_seqs" from enrichSeqsDB4EnrichProfile
-        file "enrich_matches" from enrichSearchResults
+        file "input_profile" from cascadeProfile
+        file "enrich_seqs" from enrichdb
+        file "enrich_matches" from enrichedSearchResults
 
         output:
         file "enriched_profile" into enrichedProfile
@@ -251,14 +247,14 @@ if ( params.enrich_profile ) {
         QUERY = "input_profile"
         TARGET = "enrich_seqs"
         RESULTS = "enrich_matches"
-        OUTDB = "enriched_profiles"
+        OUTDB = "enriched_profile"
         NCPUS = task.cpus
-        template mmseqs_result_to_profiles.sh
+        template "mmseqs_result_to_profile.sh"
     }
 
     enrichedProfile.set { profile4Clu }
 } else {
-    profile.set { profile4Clu }
+    cascadeProfile.set { profile4Clu }
 } 
 
 
@@ -274,14 +270,14 @@ process clusterProfile {
     file "input_profile" from profile4Clu
 
     output:
-    file "profile" into profileClu
-    file "profile_matches.tsv" into profileSearchResults
+    file "profile" into profileClusters
+    file "profile_matches.tsv" into profileClustersResults
 
     script:
     INDB = "input_profile"
     OUTDB = "profile"
     NCPUS = task.cpus
-    template mmseqs_cluster_profiles.sh
+    template "mmseqs_cluster_profile.sh"
 }
 
 
@@ -293,12 +289,12 @@ process mergeClusters {
     publishDir "${params.outdir}/clusters"
 
     input:
-    file "seq" from seqDB4MergeClusters
-    file "cascade" from cascadeClu4MergeClusters
-    file "profile" from profileClu
+    file "seq" from seqdb
+    file "cascade" from cascadeClusters
+    file "profile" from profileClusters
 
     output:
-    file "merged" into mergedClu
+    file "merged" into mergedClusters
 
     """
     mkdir -p merged
@@ -311,10 +307,6 @@ process mergeClusters {
     """
 }
 
-mergedClu.into {
-    profileClu4Stats;
-    profileClu4MSA;
-}
 
 /*
  * Extract information about each cluster.
@@ -325,49 +317,24 @@ process extractProfileClusterStats {
     publishDir "${params.outdir}/clusters"
 
     input:
-    file "clusters" from profileClu4Stats
-    file "seq" from seqDB4ProfileStats
+    file "profile" from mergedClusters
+    file "seq" from seqdb
 
     output:
-    file "${clusters}.tsv" into profileCluTSV
-    file "${clusters}_rep.fasta" into profileCluRepFasta
-    file "${clusters}_stats.tsv" into profileCluStats
+    file "profile.tsv" into profileClustersTSV
+    file "profile_rep.fasta" into profileClustersRepFasta
+    file "profile_stats.tsv" into profileClustersStats
 
     script:
     SEQS = "seq"
-    CLUSTERS = "clusters"
+    CLUSTERS = "profile"
     NCPUS = task.cpus
     template "mmseqs_cluster_stats.sh"
 }
 
 
-/*
- * Merge the cluster tables and profile statistics
-process joinClusterStats {
-    label 'R'
-    publishDir "${params.outdir}/clusters"
 
-    input:
-    file "cascade.tsv" from cascadeCluTSV
-    file "profile.tsv" from profileCluTSV
-    file "profile_stats.tsv" from profileCluStats
-
-    output:
-    file "clusters.tsv" into clusterStats
-
-    """
-    join_clusters.R \
-      cascade.tsv \
-      profile.tsv \
-      profile_stats.tsv \
-    > clusters.tsv
-    """
-}
- */
-
-
-if ( ( !params.nomsa ) && params.enrich_msa ) {
-
+if ( params.enrich_msa ) {
     /*
      * Create a profile database from the final clusters.
      */
@@ -375,31 +342,31 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
         label "mmseqs"
 
         input:
-        file "clusters" from profileClu4MSA
-        file "seqs" from seqDB4CreateProfileCluProfile
+        file "clusters" from mergedClusters
+        file "seqs" from seqdb
 
         output:
-        file "profile" into profileCluProfile
+        file "profile" into profileClustersProfile
 
         script:
         QUERY = "seqs"
         TARGET = "seqs"
         RESULTS = "clusters"
         OUTDB = "profile"
-        template mmseqs_result_to_profile.sh
+	NCPUS = task.cpus
+        template "mmseqs_result_to_profile.sh"
     }
-
-    profileCluProfile.into { profile4EnrichMSAs; profile4EnrichMSAsResults }
 
     /*
      * Search the enrichment database to enrich msas.
      */
     process enrichMSAs {
         label "mmseqs"
+        publishDir "msas"
 
         input:
-        file "profile" from profile4EnrichMSAs
-        file "enrich_seqs" from enrichSeqsDB4enrichMSA
+        file "profile" from profileClustersProfile
+        file "enrich_seqs" from enrichdb
 
         output:
         file "enrich_matches" into enrichMsaSearchResults 
@@ -409,82 +376,251 @@ if ( ( !params.nomsa ) && params.enrich_msa ) {
         TARGET = "enrich_seqs"
         OUTDB = "enrich_matches"
         NCPUS = task.cpus
-        template: mmseqs_search_profile_relaxed.sh
+        template "mmseqs_search_profile_relaxed.sh"
     }
 
-    enrichMsaSearchResults.into { clu4MSA; enrichMsaSearchResults4Results }
 
     process enrichMSAsResults {
         label "mmseqs"
         publishDir "msas"
 
         input:
-        file "profile" from profile4EnrichMSAsResults
-        file "matches" from enrichMsaSearchResults4Results
+        file "profile" from profileClustersProfile
+        file "enrich_seqs" from enrichdb
+        file "matches" from enrichMsaSearchResults
 
         output:
         file "enrich_matches.tsv" into enrichedMatches
 
         """
         mmseqs convertalis \
-          input_profile/db \
-          input_profile/db_consensus \
-          search_result/db \
+          profile/db \
+          enrich_seqs/db \
+          matches/db \
           "enrich_matches.tsv" \
           --threads ${task.cpus} \
           --format-mode 0 \
-          --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
+          --format-output "query,target,evalue,qcov,tcov,gapopen,pident,nident,mismatch,raw,bits,qstart,qend,tstart,tend,qlen,tlen,alnlen"
 
         sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' enrich_matches.tsv
         """
     }
 
-} else {
-    clu4MSA = profileClu4MSA
+    process mmseqsEnrichedMSA {
+        label 'mmseqs'
+        publishDir "msas"
+        
+        input:
+        file "clusters" from enrichMsaSearchResults
+        file "seq" from seqdb
+        file "target" from enrichdb
+        
+        output:
+        file "enriched" into enrichedMsa
+        
+        """
+        mkdir -p enriched
+        mmseqs result2msa \
+          seq/db \
+          target/db \
+          clusters/db \
+          enriched/db \
+          --compress \
+          --threads ${task.cpus}
+        """
+    }
 }
 
+if ( params.mafft ) {
 
-
-/*
-
-if ( !params.nomsa_refine && !params.nomsa ) {
-     * Refine the fast MSAs from mmseqs using muscle
-     * The issue with the regular mmseqs MSAs is that it can't have gaps in the
-     * seed sequence, muscle should refit that.
-    process refineMSAs {
-        label "muscle"
-        publishDir "${params.outdir}/msas/muscle"
-        tag { fasta.baseName }
-
+    process clusterSeqdb {
+        label "mmseqs"
+    
         input:
-        file fasta from mmseqsMsas4Refinement.flatten()
-
+        file "clusters" from mergedClusters
+        file "seq" from seqdb
+    
         output:
-        file "${fasta.baseName}.faa" into refinedMsas
-
+        set "cluster_seqs_*{,.index}" into splitClusters mode flatten
+    
         """
-        NSEQS=\$(grep -c ">" ${fasta})
- 
-        if [ "\${NSEQS}" -lt "2" ]; then
-          cp "${fasta}" "${fasta.baseName}.faa"
-        else
-          muscle \
-            -in "${fasta}" \
-            -out "${fasta.baseName}.faa" \
-            -seqtype protein \
-            -refine
-        fi    
+        mkdir -p cluster_seqs
+        mmseqs createseqfiledb "seq/db" "clusters/db" "cluster_seqs/db"
+    
+        NCLUSTERS=\$(wc -l < "cluster_seqs/db.index")
+        NSPLITS=\$(( (\${NCLUSTERS} + 50000 + 1) / 50000 ))
+    
+        mmseqs splitdb "cluster_seqs/db" "cluster_seqs" --split \${NSPLITS}
+        """
+     
+    } 
+    
+    
+    process mafftMSA {
+        label "mmseqs_mafft"
+    
+        input:
+        set file(db), file(db_index) from splitClusters
+            .map { [it.getSimpleName(), it] }
+            .groupTuple(by: 0, size: 2)
+            .map { bn, files -> files }
+    
+        output:
+        set file("msas_${db.getName()}"), file("msas_${db_index.getName()}") into splitMuscleMSAs
+    
+        """
+        mmseqs apply "${db}" "msas_${db.getName()}" -- mafft --retree 2 --maxiterate 2 --amino - 
         """
     }
 
-    msas4Trees = refinedMsas
-} else if ( !params.nomsa ) {
-    msas4Trees = mmseqsMsas4Refinement.flatten()
+    process combineSplitMSAs {
+        label "mmseqs"
+        publishDir "msas"
+    
+        input:
+        file "*" from msas4CombineSplitMSAs
+            .flatten()
+            .collect()
+    
+        output:
+        file "mafft" into combinedMSAs
+    
+        """
+        mkdir -p mafft
+        mmseqs concatdbs \$(find . -type f -not -name "*.index") mafft/db --preserve-keys
+        """
+    }
+
+    msa4EstimateTrees = combinedMSAs
+} else {
+    process mmseqsMSA {
+        label 'mmseqs'
+        publishDir "msas"
+        
+        input:
+        file "seq" from seqdb
+        file "clusters" from mergedClusters
+        
+        output:
+        file "mmseqs" into msa
+        
+        """
+        mkdir -p mmseqs
+        mmseqs result2msa \
+          seq/db \
+          seq/db \
+          clusters/db \
+          mmseqs/db \
+          --compress \
+          --threads ${task.cpus}
+
+        cp seq/db_h mmseqs/db_header.ffdata
+        cp seq/db_h.index mmseqs/db_header.ffindex
+        cp seq/db mmseqs/db_sequence.ffdata
+        cp seq/db.index mmseqs/db_sequence.ffindex
+        """
+    }
+    msa4EstimateTrees = msa
 }
-*/
 
 
-/*
+if ( params.hhdata ) {
+
+    process addCS219 {
+        label "hhsuite"
+
+        cpus 16
+    
+        input:
+        file "msa" from msa
+        file "hhdata" from hhdata
+    
+        output:
+        file "hhmmseqs" into hhcs219
+    
+        """
+        # Copy the directory because they all have to be kept together
+        # and the alternative is to have some weird mutable folder thing happening.
+        mkdir -p hhmmseqs
+        cp -r msa/* hhmmseqs
+
+        a3m_database_extract \
+            -i hhmmseqs/db_ca3m \
+            -o hhmmseqs/db_a3m \
+            -d hhmmseqs/db_sequence \
+            -q hhmmseqs/db_header
+    
+        mpirun -np ${task.cpus} cstranslate_mpi \
+            -i hhmmseqs/db \
+            -o hhmmseqs/db_cs219 \
+            -x 0.3 \
+            -c 4 \
+            -b \
+            -I ca3m \
+            -A hhdata/cs219.lib \
+            -D hhdata/context_data.lib
+
+        sort -k3 -n hhmmseqs/db_cs219.ffindex | cut -f1 > hhmmseqs/sorting.dat
+
+
+        ffindex_order hhmmseqs/sorting.dat \
+            hhmmseqs/db_a3m.ff{data,index} \
+            db_a3m_ordered.ff{data,index}
+
+        mv db_a3m_ordered.ffdata hhmmseqs/db_a3m.ffdata
+        mv db_a3m_ordered.ffindex hhmmseqs/db_a3m.ffindex
+
+
+        ffindex_order hhmmseqs/sorting.dat \
+            hhmmseqs/db_ca3m.ff{data,index} \
+            db_ca3m_ordered.ff{data,index}
+
+        mv db_ca3m_ordered.ffdata hhmmseqs/db_ca3m.ffdata
+        mv db_ca3m_ordered.ffindex hhmmseqs/db_ca3m.ffindex
+
+
+        ffindex_order hhmmseqs/sorting.dat \
+            hhmmseqs/db_cs219.ff{data,index} \
+            db_cs219_ordered.ff{data,index}
+
+        mv db_cs219_ordered.ffdata hhmmseqs/db_cs219.ffdata
+        mv db_cs219_ordered.ffindex hhmmseqs/db_cs219.ffindex
+        """
+    }
+
+    process addHHM {
+        label "hhsuite"
+        publishDir "msas"
+        cpus 16
+
+        input:
+        file "hhcs219" from hhcs219
+
+        output:
+        file "hhmmseqs" into hhmsas
+
+        """
+        mkdir -p hhmmseqs
+        ln -s \$(pwd)/hhcs219/* \$(pwd)/hhmmseqs
+
+        mpirun -np ${task.cpus} ffindex_apply_mpi \
+            hhmmseqs/db_a3m.ff{data,index} \
+            -i hhmmseqs/db_hhm.ffindex \
+            -d hhmmseqs/db_hhm.ffdata \
+            -- \
+            hhmake -i stdin -o stdout -v 0
+
+        ffindex_order hhmmseqs/sorting.dat \
+            hhmmseqs/db_hhm.ff{data,index} \
+            db_hhm_ordered.ff{data,index}
+
+        mv db_hhm_ordered.ffdata hhmmseqs/db_hhm.ffdata
+        mv db_hhm_ordered.ffindex hhmmseqs/db_hhm.ffindex
+        """
+    }
+}
+
+    /*
 if ( params.trees ) {
      * Estimate trees using the MSAs
     process estimateTrees {
@@ -493,7 +629,7 @@ if ( params.trees ) {
         tag { msa.baseName }
 
         input:
-        file msa from msas4Trees
+        file msa from msas4EstimateTrees
 
         output:
         file "${msa.baseName}.nwk" into indivTrees
@@ -503,4 +639,4 @@ if ( params.trees ) {
         """
     }
 }
-*/
+     */

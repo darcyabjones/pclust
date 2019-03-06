@@ -8,7 +8,7 @@ mkdir -p tmp
 
 mmseqs cluster \
   "${INDB}/db" \
-  "${CASCADE}/db" \
+  "${OUTDB}/db" \
   tmp \
   --threads ${NCPUS} \
   --min-seq-id 0.0 \

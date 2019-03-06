@@ -44,6 +44,6 @@ mmseqs convertalis \
   "${CLUSTERS}_stats.tsv" \
   --threads ${NCPUS} \
   --format-mode 0 \
-  --format-output "query target evalue qcov tcov gapopen pident nident mismatch raw bits qstart qend tstart tend qlen tlen alnlen"
+  --format-output \'query,target,evalue,qcov,tcov,gapopen,pident,nident,mismatch,raw,bits,qstart,qend,tstart,tend,qlen,tlen,alnlen\'
 
 sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "${CLUSTERS}_stats.tsv"
