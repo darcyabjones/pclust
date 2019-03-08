@@ -544,12 +544,6 @@ if ( params.hhdata ) {
         mkdir -p hhmmseqs
         cp -r msa/* hhmmseqs
 
-        a3m_database_extract \
-            -i hhmmseqs/db_ca3m \
-            -o hhmmseqs/db_a3m \
-            -d hhmmseqs/db_sequence \
-            -q hhmmseqs/db_header
-    
         mpirun -np ${task.cpus} cstranslate_mpi \
             -i hhmmseqs/db \
             -o hhmmseqs/db_cs219 \
@@ -561,14 +555,6 @@ if ( params.hhdata ) {
             -D hhdata/context_data.lib
 
         sort -k3 -n hhmmseqs/db_cs219.ffindex | cut -f1 > hhmmseqs/sorting.dat
-
-
-        ffindex_order hhmmseqs/sorting.dat \
-            hhmmseqs/db_a3m.ff{data,index} \
-            db_a3m_ordered.ff{data,index}
-
-        mv db_a3m_ordered.ffdata hhmmseqs/db_a3m.ffdata
-        mv db_a3m_ordered.ffindex hhmmseqs/db_a3m.ffindex
 
 
         ffindex_order hhmmseqs/sorting.dat \
@@ -603,8 +589,14 @@ if ( params.hhdata ) {
         mkdir -p hhmmseqs
         ln -s \$(pwd)/hhcs219/* \$(pwd)/hhmmseqs
 
+        a3m_database_extract \
+            -i hhmmseqs/db_ca3m \
+            -o db_a3m \
+            -d hhmmseqs/db_sequence \
+            -q hhmmseqs/db_header
+
         mpirun -np ${task.cpus} ffindex_apply_mpi \
-            hhmmseqs/db_a3m.ff{data,index} \
+            db_a3m.ff{data,index} \
             -i hhmmseqs/db_hhm.ffindex \
             -d hhmmseqs/db_hhm.ffdata \
             -- \
@@ -616,6 +608,8 @@ if ( params.hhdata ) {
 
         mv db_hhm_ordered.ffdata hhmmseqs/db_hhm.ffdata
         mv db_hhm_ordered.ffindex hhmmseqs/db_hhm.ffindex
+
+        rm db_a3m.ff{data,index}
         """
     }
 }

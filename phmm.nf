@@ -17,10 +17,9 @@ def helpMessage() {
     abaaab
 
     Mandatory Arguments:
-      --msas <glob pattern> Multiple sequence alignements to analyse.
+      --clusters <glob pattern>
 
     Options:
-      --enrich              Enrich input MSAs using uniref. 
       --nopdb               Don't search for matches in PDB
       --nopfam              Don't search for matches in PFam
       --noscop              Don't search for matches in SCOP
@@ -44,16 +43,12 @@ if (params.help){
     exit 0
 }
 
-params.msas = false
+params.clusters = false
 
-params.enrich = false
 params.nopdb = false
 params.nopfam = false
 params.noscop = false
 params.nouniref = false
-
-//params.dssp = false
-//params.pdb = false
 
 params.hhpdb = false
 params.hhscop = false
@@ -61,67 +56,26 @@ params.hhuniref = false
 params.hhpfam = false
 
 
-if ( !params.msas ) {
+if ( params.clusters ) {
+    clusters = Channel
+        .fromPath(params.clusters, type: 'dir', checkIfExists: true, glob: false)
+        .first()
+} else {
     log.info "Hey I need some MSAs to use please."
     exit 1
 }
 
-msas = Channel
-    .fromPath(params.msas)
-    .map { [it.baseName, it] }
-
 /*
-Get the databases ready.
-Downloads them if they don't exist already.
-*/
-
-/*
-if ( !params.pdb ) {
-    process downloadPDB {
-        label "download"
-        storeDir "${params.outdir}/databases"
-
-        output:
-        file "pdb" into pdbDatabase
-
-        """
-        rsync \
-          -rlpt \
-          -v \
-          -z \
-          --delete \
-          --port=33444 \
-          rsync.rcsb.org::ftp_data/structures/divided/mmCIF/ \
-          ./pdb
-        """
-    }
-} else if ( file(params.pdb).exists() ) {
-    dsspDatabase = Channel.fromPath( params.pdb )
-} else {
-    exit 1, "You specified a pdb database, but it doesn't exist."
-}
+ * Get the databases ready.
+ * Downloads them if they don't exist already.
+ */
 
 
-if ( !params.dssp ) {
-    process downloadDSSP {
-        label "download"
-        storeDir "${params.outdir}/databases"
-
-        output:
-        file "dssp" into dsspDatabase
-
-        """
-        rsync -avz rsync://rsync.cmbi.ru.nl/dssp/ ./dssp
-        """
-    }
-} else if ( file(params.dssp).exists() ) {
-    dsspDatabase = Channel.fromPath( params.dssp )
-} else {
-    exit 1, "You specified a dssp database, but it doesn't exist."
-}
-*/
-
-if ( !params.hhuniref ) {
+if ( !params.nouniref && params.hhuniref ) {
+    hhunirefDatabase = Channel
+        .fromPath( params.hhuniref, type: 'dir', checkIfExists: true, glob: false)
+        .first()
+} else if ( !params.nouniref ) {
     process downloadHHUniref {
         label "download"
         storeDir "${params.outdir}/databases"
@@ -138,16 +92,14 @@ if ( !params.hhuniref ) {
         rm -rf -- uniclust30_2018_08
         """
     }
-} else if ( file(params.hhuniref).exists() ) {
-    hhunirefDatabase = Channel.fromPath( params.hhuniref )
-} else {
-    exit 1, "You specified a hhblits formatted uniref database, but it doesn't exist."
 }
 
-hhunirefDatabase.into { hhunirefDatabase4Enrich; hhunirefDatabase4Search }
 
-
-if ( !params.hhpdb ) {
+if ( !params.nopdb && params.hhpdb ) {
+    hhpdbDatabase = Channel
+        .fromPath( params.hhpdb, type: 'dir', checkIfExists: true, glob: false )
+        .first()
+} else if ( !params.nopdb ) {
     process downloadHHPDB {
         label "download"
         storeDir "${params.outdir}/databases"
@@ -162,14 +114,13 @@ if ( !params.hhpdb ) {
         tar -zxf pdb70_from_mmcif_181017.tar.gz
         """
     }
-} else if ( file(params.hhpdb).exists() ) {
-    hhpdbDatabase = Channel.fromPath( params.hhpdb )
-} else {
-    exit 1, "You specified a hhblits formatted pdb database, but it doesn't exist."
 }
 
-
-if ( !params.hhscop ) {
+if ( !params.noscop && params.hhscop ) {
+    hhscopDatabase = Channel
+        .fromPath( params.hhscop, type: 'dir', checkIfExists: true, glob: false )
+        .first()
+} else if ( !params.noscop ) {
     process downloadHHSCOP {
         label "download"
         storeDir "${params.outdir}/databases"
@@ -184,14 +135,14 @@ if ( !params.hhscop ) {
         tar -zxf scop90_01Mar17.tgz
         """
     }
-} else if ( file(params.hhscop).exists() ) {
-    hhscopDatabase = Channel.fromPath( params.hhscop )
-} else {
-    exit 1, "You specified a hhblits formatted scop database, but it doesn't exist."
 }
 
 
-if ( !params.hhpfam ) {
+if ( !params.nopfam && params.hhpfam ) {
+    hhpfamDatabase = Channel
+        .fromPath( params.hhpfam, type: 'dir', checkIfExists: true, glob: false )
+        .first()
+} else if ( !params.nopfam ) {
     process downloadHHPFAM {
         label "download"
         storeDir "${params.outdir}/databases"
@@ -206,192 +157,88 @@ if ( !params.hhpfam ) {
         tar -zxf pfamA_31.0.tgz
         """
     }
-} else if ( file(params.hhpfam).exists() ) {
-    hhpfamDatabase = Channel.fromPath( params.hhpfam )
-} else {
-    exit 1, "You specified a hhblits formatted pfam database, but it doesn't exist."
-}
-
-
-if ( params.enrich ) {
-    /*
-     * Enrich the MSAs using hmms from uniref.
-     */
-    process enrichMsas {
-        label "hhblits"
-        publishDir "${params.outdir}/enriched_msas"
-        tag { label }
-    
-        input:
-        set val(label), file("input.faa") from msas
-        file "db" from hhunirefDatabase4Enrich
-    
-        output:
-        set val(label), file("${label}.hhr") into enrichedResults
-        set val(label), file("${label}.a3m") into enrichedMsas
-    
-        """
-        NSEQS=\$(grep -c "^>" "input.faa")
-        if [ "\${NSEQS}" -eq "1" ]; then
-          MOPT="first"
-        else
-          MOPT="50"
-        fi
-    
-        hhblits \
-          -i "input.faa" \
-          -o "${label}.hhr" \
-          -oa3m "${label}.a3m" \
-          -ohhm "${label}.hhm" \
-          -atab "${label}.tsv" \
-          -n 3 \
-          -id 90 \
-          -M first \
-          -mact 0.4 \
-          -maxmem 12.0 \
-          -cpu ${task.cpus} \
-          -d "db/uniclust30_2018_08"
-        """
-    }
-} else {
-    /*
-     * Convert fasta MSAs to a3m format
-     */
-    process msa2A3m {
-        label "hhblits"
-        tag { label }
-        cpus  1
-
-        input:
-        set val(label), file("input.faa") from msas
-
-        output:
-        set val(label), file("${label}.a3m") into enrichedMsas
-
-        """
-        NSEQS=\$(grep -c "^>" "input.faa")
-        if [ "\${NSEQS}" -eq "1" ]; then
-          MOPT="first"
-        else
-          MOPT="50"
-        fi
-
-        reformat.pl \
-          fas \
-          a3m \
-          "input.faa" \
-          "${label}.a3m" \
-          -M first
-        """
-    }
-}
-
-
-
-enrichedMsas.into {
-    msas4Database;
-    msas4Search;
-    msas4Uniref;
-    msas4Pfam;
-    msas4Scop;
-    msas4Pdb
 }
 
 
 /*
- * Combine the enriched MSAs into a database that can be searched with hhsearch.
+ * Run the database searches.
  */
-process createHmmDatabase {
-    label "hhblits"
-    publishDir "${params.outdir}/hhsuite"
+
+process decompressDB {
+    label "hhsuite"
 
     input:
-    file "*.a3m" from msas4Database.map {l, f -> f} .collect()
+    file "clusters" from clusters
 
     output:
-    file "clusterdb" into clusterDb
+    file "decompressed" into decompressed
 
     """
-    mkdir -p clusterdb
-    ls *.a3m > files.dat
-    
-    ffindex_build \
-      -s \
-      clusterdb/clusters_a3m.ffdata \
-      clusterdb/clusters_a3m.ffindex \
-      -f files.dat
-    
-    cd clusterdb
-    
-    ffindex_apply \
-      clusters_a3m.ff{data,index} \
-      -d clusters_hhm.ffdata \
-      -i clusters_hhm.ffindex \
-      -- hhmake -i stdin -o stdout -v 0
-    
-    cstranslate \
-      -A \${HHLIB}/data/cs219.lib \
-      -D \${HHLIB}/data/context_data.lib \
-      -x 0.3 \
-      -c 4 \
-      -f \
-      -b \
-      -I a3m \
-      -i clusters_a3m \
-      -o clusters_cs219
-    
-    ffindex_build -as clusters_cs219.ff{data,index}
-    
-    sort -k3 -n clusters_cs219.ffindex | cut -f1 > sorting.dat
-    ffindex_order \
-      sorting.dat \
-      clusters_hhm.ff{data,index} \
-      clusters_hhm_sorted.ff{data,index}
-    
-    ffindex_order \
-      sorting.dat \
-      clusters_a3m.ff{data,index} \
-      clusters_a3m_sorted.ff{data,index}
+    mkdir -p decompressed
 
-    mv clusters_a3m_sorted.ffindex clusters_a3m.ffindex
-    mv clusters_a3m_sorted.ffdata clusters_a3m.ffdata
-    mv clusters_hhm_sorted.ffindex clusters_hhm.ffindex
-    mv clusters_hhm_sorted.ffdata clusters_hhm.ffdata
- 
-    cd ..
-    rm files.dat
+    a3m_database_extract \
+        -i clusters/db_ca3m \
+        -o decompressed/db_a3m \
+        -d clusters/db_sequence \
+        -q clusters/db_header
     """
 }
+
+
+process splitDB {
+    label "python"
+
+    input:
+    file "clusters" from decompressed
+
+    output:
+    // NB we rely on the data, index order of this glob, throughout.
+    // Changing it will cause errors.
+    file "subset_*.ff{data,index}" into splitClusters mode flatten
+
+    """
+    ffsplit.py -n 10000 -b "subset_{index}.{ext}" clusters/db_a3m.ff{data,index}
+    """
+}
+
+
+splitClusters
+    .map { [it.getSimpleName(), it] }
+    .groupTuple(by: 0, size: 2)
+    .map { bn, files -> [bn, files[0], files[1]] }
+    .into {
+        clusters4Search;
+        clusters4Uniref;
+        clusters4Pfam;
+        clusters4Scop;
+        clusters4Pdb;
+    }
+
 
 
 /*
  * Search each cluster hmm against all other clusters.
  */
 process searchClusters {
-    label "hhblits"
-    publishDir "${params.outdir}/hhsuite/clusters"
-    tag { label }
+    label "hhsuite"
+    tag { name }
+    cpus = 16
 
     input:
-    set val(label), file("input.a3m") from msas4Search
-    file "db" from clusterDb
+    set val(name), file("subset.ffdata"), file("subset.ffindex") from clusters4Search
+    file "clusters" from clusters
 
     output:
-    set val(label), file("${label}.hhr") into clusterResults
-    set val(label), file("${label}.a3m") into clusterMsas
+    set val("clusters"), file("${name}.ffdata"), file("${name}.ffindex") into clusterSearchResults
 
-    """
-    hhblits \
-      -i "input.a3m" \
-      -o "${label}.hhr" \
-      -oa3m "${label}.a3m" \
-      -atab "${label}.tsv" \
-      -M a2m \
-      -all \
-      -mact 0.4 \
-      -cpu ${task.cpus} \
-      -d "db/clusters"
-    """
+    script:
+    CPU_PER_TASK = 4
+    NTASKS = task.cpus.intdiv(CPU_PER_TASK)
+    INPUT = "subset"
+    OUTPUT = name
+    DB  = "clusters"
+
+    template "hhblits_mpi_sensitive.sh"
 }
 
 
@@ -401,31 +248,27 @@ if ( !params.nouniref ) {
      */
     process searchUniref {
         label "hhblits"
-        publishDir "${params.outdir}/hhsuite/uniref"
-        tag { label }
+        tag { name }
     
         input:
-        set val(label), file("input.a3m") from msas4Uniref
-        file "db" from hhunirefDatabase4Search
+        set val(name), file("subset.ffdata"), file("subset.ffindex") from clusters4Uniref
+        file "uniref" from hhunirefDatabase
     
         output:
-        set val(label), file("${label}.hhr") into unirefResults
-        set val(label), file("${label}.a3m") into unirefMsas
+        set val("uniref"), file("${name}.ffdata"), file("${name}.ffindex") into unirefSearchResults
     
-        """
-        hhblits \
-          -i "input.a3m" \
-          -o "${label}.hhr" \
-          -oa3m "${label}.a3m" \
-          -atab "${label}.tsv" \
-          -n 1 \
-          -M a2m \
-          -all \
-          -mact 0.4 \
-          -cpu ${task.cpus} \
-          -d db/uniclust30_2018_08
-        """
+        script:
+        CPU_PER_TASK = 2
+        NTASKS = task.cpus.intdiv(CPU_PER_TASK)
+        INPUT = "subset"
+        OUTPUT = name
+        DB  = "uniref"
+        NITER = 1
+    
+        template "hhblits_mpi.sh"
     }
+} else {
+    unirefSearchResults = Channel.create()
 }
 
 
@@ -435,30 +278,26 @@ if ( !params.nopfam ) {
      */
     process searchPfam {
         label "hhblits"
-        publishDir "${params.outdir}/hhsuite/pfam"
-        tag { label }
+        tag { name }
     
         input:
-        set val(label), file("input.a3m") from msas4Pfam
-        file "db" from hhpfamDatabase
+        set val(name), file("subset.ffdata"), file("subset.ffindex") from clusters4Pfam
+        file "pfam" from hhpfamDatabase
     
         output:
-        set val(label), file("${label}.hhr") into pfamResults
-        set val(label), file("${label}.a3m") into pfamMsas
+        set val("pfam"), file("${name}.ffdata"), file("${name}.ffindex") into pfamSearchResults
     
-        """
-        hhsearch \
-          -i "input.a3m" \
-          -o "${label}.hhr" \
-          -oa3m "${label}.a3m" \
-          -atab "${label}.tsv" \
-          -M a2m \
-          -all \
-          -mact 0.4 \
-          -cpu ${task.cpus} \
-          -d db/pfam
-        """
+        script:
+        CPU_PER_TASK = 2
+        NTASKS = task.cpus.intdiv(CPU_PER_TASK)
+        INPUT = "subset"
+        OUTPUT = name
+        DB  = "pfam"
+    
+        template "hhblits_mpi_sensitive.sh"
     }
+} else {
+    pfamSearchResults = Channel.create()
 }
 
 
@@ -468,30 +307,26 @@ if ( !params.noscop ) {
      */
     process searchScop {
         label "hhblits"
-        publishDir "${params.outdir}/hhsuite/scop"
-        tag { label }
+        tag { name }
     
         input:
-        set val(label), file("input.a3m") from msas4Scop
-        file "db" from hhscopDatabase
+        set val(name), file("subset.ffdata"), file("subset.ffindex") from clusters4Scop
+        file "scop" from hhscopDatabase
     
         output:
-        set val(label), file("${label}.hhr") into scopResults
-        set val(label), file("${label}.a3m") into scopMsas
+        set val("scop"), file("${name}.ffdata"), file("${name}.ffindex") into scopSearchResults
     
-        """
-        hhsearch \
-          -i "input.a3m" \
-          -o "${label}.hhr" \
-          -oa3m "${label}.a3m" \
-          -atab "${label}.tsv" \
-          -M a2m \
-          -all \
-          -mact 0.4 \
-          -cpu ${task.cpus} \
-          -d "db/scop90"
-        """
+        script:
+        CPU_PER_TASK = 2
+        NTASKS = task.cpus.intdiv(CPU_PER_TASK)
+        INPUT = "subset"
+        OUTPUT = name
+        DB  = "scop"
+    
+        template "hhblits_mpi_sensitive.sh"
     }
+} else {
+    scopSearchResults = Channel.create()
 }
 
 
@@ -501,28 +336,45 @@ if ( !params.nopdb ) {
      */
     process searchPdb {
         label "hhblits"
-        publishDir "${params.outdir}/hhsuite/pdb"
-        tag { label }
+        tag { name }
     
         input:
-        set val(label), file("input.a3m") from msas4Pdb
-        file "db" from hhpdbDatabase
+        set val(name), file("subset.ffdata"), file("subset.ffindex") from clusters4Pdb
+        file "pdb" from hhpdbDatabase
     
         output:
-        set val(label), file("${label}.hhr") into pdbResults
-        set val(label), file("${label}.a3m") into pdbMsas
+        set val("pdb"), file("${name}.ffdata"), file("${name}.ffindex") into pdbSearchResults
     
-        """
-        hhsearch \
-          -i "input.a3m" \
-          -o "${label}.hhr" \
-          -oa3m "${label}.a3m" \
-          -atab "${label}.tsv" \
-          -M a2m \
-          -all \
-          -mact 0.4 \
-          -cpu ${task.cpus} \
-          -d "db/pdb70"
-        """
+    
+        script:
+        CPU_PER_TASK = 2
+        NTASKS = task.cpus.intdiv(CPU_PER_TASK)
+        INPUT = "subset"
+        OUTPUT = name
+        DB  = "pdb"
+    
+        template "hhblits_mpi_sensitive.sh"
     }
+} else {
+    pdbSearchResults = Channel.create()
 }
+
+
+/*
+ * Collect the search results into a single database.
+process collectSearchResults {
+    label "python"
+    tag { db }
+
+    input:
+    set val(db), file("*") from clusterSearchResults
+        .concat(unirefSearchResults, pfamSearchResults, scopSearchResults, pdbSearchResults)
+        .flatMap { db, data, index -> [[db, data], [db, index]] }
+        .groupTuple(by: 0) 
+
+    output:
+    set file("${db}_results.ffdata"), file("${db}_results.ffindex") into searchResults
+
+
+}
+ */
