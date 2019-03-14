@@ -197,7 +197,7 @@ process splitDB {
     file "subset_*.ff{data,index}" into splitClusters mode flatten
 
     """
-    ffsplit.py -n 10000 -b "subset_{index}.{ext}" clusters/db_a3m.ff{data,index}
+    ffdb.py split -n 10000 -b "subset_{index}.{ext}" clusters/db_a3m.ff{data,index}
     """
 }
 
@@ -268,7 +268,7 @@ if ( !params.nouniref ) {
         template "hhblits_mpi.sh"
     }
 } else {
-    unirefSearchResults = Channel.create()
+    unirefSearchResults = Channel.empty()
 }
 
 
@@ -297,7 +297,7 @@ if ( !params.nopfam ) {
         template "hhblits_mpi_sensitive.sh"
     }
 } else {
-    pfamSearchResults = Channel.create()
+    pfamSearchResults = Channel.empty()
 }
 
 
@@ -326,7 +326,7 @@ if ( !params.noscop ) {
         template "hhblits_mpi_sensitive.sh"
     }
 } else {
-    scopSearchResults = Channel.create()
+    scopSearchResults = Channel.empty()
 }
 
 
@@ -356,12 +356,13 @@ if ( !params.nopdb ) {
         template "hhblits_mpi_sensitive.sh"
     }
 } else {
-    pdbSearchResults = Channel.create()
+    pdbSearchResults = Channel.empty()
 }
 
 
 /*
  * Collect the search results into a single database.
+ */
 process collectSearchResults {
     label "python"
     tag { db }
@@ -373,8 +374,9 @@ process collectSearchResults {
         .groupTuple(by: 0) 
 
     output:
-    set file("${db}_results.ffdata"), file("${db}_results.ffindex") into searchResults
+    set val(db), file("${db}_results.ffdata"), file("${db}_results.ffindex") into searchResults
 
-
+    """
+    ffdb.py combine -d "${db}_results.ffdata" -i "${db}_results.ffindex" *.{ffdata,ffindex} 
+    """
 }
- */
