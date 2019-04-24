@@ -491,7 +491,6 @@ if ( params.mafft ) {
         """
     }
 
-    msa4EstimateTrees = combinedMSAs
 } else {
     process mmseqsMSA {
         label 'mmseqs'
@@ -520,7 +519,6 @@ if ( params.mafft ) {
         cp seq/db.index mmseqs/db_sequence.ffindex
         """
     }
-    msa4EstimateTrees = msa
 }
 
 
