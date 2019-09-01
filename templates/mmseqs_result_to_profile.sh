@@ -14,4 +14,7 @@ mmseqs result2profile \
   "${OUTDB}/db" \
   --threads ${NCPUS}
 
-mkdir -p "${OUTDB}"
+#mkdir -p tmp
+#mmseqs createindex "${OUTDB}/db_consensus" tmp --threads "${NCPUS}"
+
+#rm -rf -- tmp

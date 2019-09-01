@@ -12,4 +12,7 @@ sequences
 msas
 clusters
 
-Dockerfiles/.*
+*.sif
+containers/tmp
+containers/docker
+containers/singularity

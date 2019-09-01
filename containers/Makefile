@@ -19,11 +19,19 @@ MMSEQS_PREFIX_ARG=$(INSTALL_BASE)/mmseqs/$(MMSEQS_TAG)
 
 HHSUITE_TAG=v3.2.0
 HHSUITE_REPO=https://github.com/soedinglab/hh-suite.git
-HHSUITE_PREFIX_ARG=$(INSTALL_BASE)/hhsuite/$(HHSUITE_VERSION)
+HHSUITE_PREFIX_ARG=$(INSTALL_BASE)/hhsuite/$(HHSUITE_TAG)
 HHSUITE_CMAKE_OPTIONS=
 
+MAFFT_VERSION=7.407
+MAFFT_URL=https://mafft.cbrc.jp/alignment/software/mafft-$(MAFFT_VERSION)-without-extensions-src.tgz
+MAFFT_PREFIX_ARG=$(INSTALL_BASE)/mafft/$(MAFFT_VERSION)
 
-GENERAL=mmseqs python3 posix genometools aegean
+FFDB_TAG=v0.0.1
+FFDB_REPO=https://github.com/darcyabjones/ffdb.git
+FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
+
+
+GENERAL=mmseqs python3 posix hhsuite mafft
 OPEN=$(GENERAL)
 
 all: docker/all singularity/all
@@ -131,6 +139,37 @@ docker/hhsuite: hhsuite.Dockerfile docker/base
 	  --build-arg HHSUITE_REPO="$(HHSUITE_REPO)" \
 	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
 	  --build-arg HHSUITE_CMAKE_OPTIONS="$(HHSUITE_CMAKE_OPTIONS)" \
+	  --file $< \
+	  -t "$(call make_image_name,$@)" \
+	  .
+	@mkdir -p "$(dir $@)"
+	@touch $@
+
+
+docker/ffdb: ffdb.Dockerfile docker/base docker/hhsuite
+	docker build \
+	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg FFDB_TAG="$(FFDB_TAG)" \
+	  --build-arg FFDB_REPO="$(FFDB_REPO)" \
+	  --build-arg FFDB_PREFIX_ARG="$(FFDB_PREFIX_ARG)" \
+	  --build-arg HHSUITE_IMAGE="$(call make_image_name,hhsuite)" \
+	  --build-arg HHSUITE_TAG="$(HHSUITE_TAG)" \
+	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
+	  --file $< \
+	  -t "$(call make_image_name,$@)" \
+	  .
+	@mkdir -p "$(dir $@)"
+	@touch $@
+
+
+docker/mafft: mafft.Dockerfile docker/base docker/mmseqs
+	docker build \
+	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg MAFFT_VERSION="$(MAFFT_VERSION)" \
+	  --build-arg MAFFT_PREFIX_ARG="$(MAFFT_PREFIX_ARG)" \
+	  --build-arg MMSEQS_IMAGE="$(call make_image_name,mmseqs)" \
+	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
+	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
 	  --file $< \
 	  -t "$(call make_image_name,$@)" \
 	  .

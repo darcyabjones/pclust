@@ -2,11 +2,13 @@ ARG IMAGE
 
 FROM "${IMAGE}" as hhsuite_builder
 
-ARG HHSUITE_TAG="v3.1.0"
-ARG HHSUITE_REPO="/opt/hhsuite/${HHSUITE_VERSION}"
-ARG HHSUITE_PREFIX_ARG="/opt/hhsuite/${HHSUITE_TAG}"
+ARG HHSUITE_TAG
+ARG HHSUITE_REPO
+ARG HHSUITE_PREFIX_ARG
 ARG HHSUITE_CMAKE_OPTIONS
 ENV HHSUITE_PREFIX="${HHSUITE_PREFIX_ARG}"
+ENV HHLIB="${HHSUITE_PREFIX_ARG}"
+
 
 WORKDIR /tmp
 RUN  set -eu \
@@ -36,9 +38,21 @@ RUN  set -eu \
        -G Ninja \
        -DHAVE_MPI=1 \
        -DCMAKE_BUILD_TYPE=Release \
-       -DCMAKE_INSTALL_PREFIX="${HHSUITE_PREFIX}" .. \
+       -DCMAKE_INSTALL_PREFIX="${HHSUITE_PREFIX}" \
+       .. \
   && ninja \
   && ninja install \
+  && cd /tmp \
+  && mkdir build \
+  && cd build \
+  && cmake \
+       -G Ninja \
+       -DHAVE_MPI=1 \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DCMAKE_INSTALL_PREFIX="${HHSUITE_PREFIX}" \
+       .. \
+  && ninja \
+  && ninja install \ 
   && add_runtime_dep \
        libgomp1 \
        libstdc++6 \
@@ -48,9 +62,10 @@ RUN  set -eu \
 
 FROM "${IMAGE}"
 
-ARG HHSUITE_VERSION="v3.1.0"
-ARG HHSUITE_PREFIX_ARG="/opt/hhsuite/${HHSUITE_VERSION}"
+ARG HHSUITE_VERSION
+ARG HHSUITE_PREFIX_ARG
 ENV HHSUITE_PREFIX="${HHSUITE_PREFIX_ARG}"
+ENV HHLIB="${HHSUITE_PREFIX_ARG}"
 LABEL hhsuite.version="${HHSUITE_TAG}"
 
 ENV PATH="${HHSUITE_PREFIX}/bin:${HHSUITE_PREFIX}/scripts:${PATH}"

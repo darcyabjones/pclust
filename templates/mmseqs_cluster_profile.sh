@@ -9,6 +9,8 @@
 mkdir -p tmp
 mkdir search_result
 
+# mmseqs touchdb "${INDB}/db_consensus" --threads "${NCPUS}"
+
 mmseqs search \
   "${INDB}/db" \
   "${INDB}/db_consensus" \
@@ -17,12 +19,14 @@ mmseqs search \
   --threads ${NCPUS} \
   --max-seqs 300 \
   -c 0.8 \
-  --cov-mode 1 \
-  --start-sens 5 \
-  --sens-steps 2 \
-  -s 7.0 \
+  --cov-mode 0 \
+  --start-sens 4 \
+  --sens-steps 3 \
+  -s 7.5 \
+  -e 0.00001 \
+  --e-profile 0.01 \
   --add-self-matches \
-  --num-iterations 2
+  --db-load-mode 3
 
 # Cluster the matches of profiles vs consensus sequences.
 mkdir -p ${OUTDB}
@@ -31,7 +35,7 @@ mmseqs clust \
   search_result/db \
   "${OUTDB}/db" \
   --threads ${NCPUS} \
-  --cluster-mode 2
+  --cluster-mode 0
 
 mmseqs convertalis \
   ${INDB}/db \

@@ -13,15 +13,16 @@ mmseqs search \
   "${TARGET}/db" \
   "${OUTDB}/db" \
   tmp \
+  -a \
   --threads ${NCPUS} \
-  --max-seqs 500 \
+  --max-seqs 300 \
   -e 0.00001 \
   --e-profile 0.01 \
-  -c 0.1 \
-  --start-sens 5.0 \
-  --sens-steps 1 \
-  -s 7.0 \
+  --start-sens 4.0 \
+  --sens-steps 3 \
+  -s 7.5 \
   --rescore-mode 1 \
-  --num-iterations 3
+  --realign \
+  --db-load-mode 3
 
 rm -rf -- tmp

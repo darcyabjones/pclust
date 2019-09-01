@@ -43,19 +43,28 @@ params.seqs = false
 params.db = false
 params.enrich_db = false
 params.enrich_seqs = false
-params.enrich_profile = false
 params.mafft = false
 params.hhdata = false
 
-if ( params.enrich_profile && !(params.enrich_seqs || params.enrich_db)) {
-    log.info "Enriching profiles for clustering requires a database or the sequences"
-    exit 1
-}
 
 if ( params.hhdata ) {
     hhdata = Channel
         .fromPath( params.hhdata, type: 'dir', checkIfExists: true, glob: false )
         .first()
+} else {
+
+    process getHHData {
+        label "hhsuite"
+        label "small_task"
+
+        output:
+        file "hhdata" into hhdata
+
+        script:
+        """
+        cp -r \${HHLIB}/data hhdata
+        """
+    }
 }
 
 
@@ -87,7 +96,11 @@ if ( params.db ) {
         script:
         """
         mkdir -p "seqdb"
-        mmseqs createdb "seqs.fasta "seqdb/db" --max-seq-len 14000
+        mmseqs createdb "seqs.fasta" "seqdb/db" --max-seq-len 14000
+
+	# mkdir -p tmp
+        # mmseqs createindex "seqdb/db" tmp --threads "${task.cpus}"
+        # rm -rf -- tmp
         """
     }
 
@@ -97,13 +110,13 @@ if ( params.db ) {
 }
 
 
-if (params.enrich_db && params.enrich_profile ) {
+if ( params.enrich_db ) {
 
     enrichdb = Channel
         .fromPath( params.enrich_db, type: 'dir', checkIfExists: true, glob: false )
         .first()
 
-} else if ( params.enrich_seqs && params.enrich_msa ) {
+} else if ( params.enrich_seqs ) {
 
     enrichSeqs = Channel
         .fromPath( params.enrich_seqs, type: 'file', checkIfExists: true, glob: false )
@@ -123,18 +136,22 @@ if (params.enrich_db && params.enrich_profile ) {
         script:
         """
         mkdir -p "enrich_db"
-        mmseqs createdb "seqs.fasta "enrich_db/db" --max-seq-len 14000
+        mmseqs createdb "seqs.fasta" "enrich_db/db" --max-seq-len 14000
+
+        # mkdir -p tmp
+        # mmseqs createindex "enrich_db/db" tmp --threads "${task.cpus}"
+        # rm -rf -- tmp
         """
     }
 
-} else if ( params.enrich_profile ) {
-    log.info "You asked to enrich the profile but didn't provide db to enrich with."
-    exit 1
+} else {
+    enrichdb = seqdb
 }
 
 
 /*
  * Perform the first pass clustering using basic mmseqs workflow.
+ */
 process clusterCascade {
     label 'mmseqs'
     label "big_task"
@@ -154,27 +171,30 @@ process clusterCascade {
     mkdir -p "${OUTDB}"
     mkdir -p tmp
 
+    # mmseqs touchdb "${INDB}/db" --threads "${task.cpus}"
+
     mmseqs cluster \
       "${INDB}/db" \
       "${OUTDB}/db" \
       tmp \
-      --threads ${NCPUS} \
+      --threads "${NCPUS}" \
       --min-seq-id 0.0 \
-      -c 0.7 \
+      -c 0.8 \
       --cov-mode 0 \
-      -s 7.5 \
-      --cluster-steps 5 \
-      --cluster-mode 0
+      --cluster-steps 3 \
+      -s 6.5 \
+      --cluster-mode 0 \
+      --db-load-mode 0
 
     rm -rf -- tmp
     """
 }
- */
 
 
 /*
  * Extract information about each cluster.
  * E.G. cluster members, representative sequences, alignment statistics.
+ */
 process extractCascadeClusterStats {
     label 'mmseqs'
     label "big_task"
@@ -196,10 +216,11 @@ process extractCascadeClusterStats {
     NCPUS = task.cpus
     template "mmseqs_cluster_stats.sh"
 }
- */
 
 
 /*
+ * Convert the cascade clusters into PSSMs
+ */
 process createProfile {
     label "mmseqs"
     label "big_task"
@@ -220,13 +241,13 @@ process createProfile {
     NCPUS = task.cpus
     template "mmseqs_result_to_profile.sh"
 }
-*/
 
+
+if ( params.enrich_db || params.enrich_seqs ) {
 
     /*
-if ( params.enrich_profile ) {
-
      * Enrich the sequences by searching a database.
+     */
     process enrichProfile {
         label "mmseqs"
         label "big_task"
@@ -234,22 +255,40 @@ if ( params.enrich_profile ) {
         input:
         file "profile" from cascadeProfile
         file "enrich_seqs" from enrichdb
+	file "seqs" from seqdb
 
         output:
         file "enrich_matches" into enrichedSearchResults 
 
         script:
-        PROFILE = "profile"
-        TARGET = "enrich_seqs"
-        OUTDB = "enrich_matches"
-        NCPUS = task.cpus
-        template "mmseqs_search_profile_strict.sh"
+        """
+	mkdir -p "tmp"
+	mkdir -p "enrich_matches"
+
+	mmseqs search \
+	  "profile/db" \
+	  "enrich_seqs/db" \
+	  "enrich_matches/db" \
+	  tmp \
+	  --threads "${task.cpus}" \
+	  --max-seqs 300 \
+	  -e 0.00001 \
+	  --e-profile 0.01 \
+	  --start-sens 4.0 \
+	  --sens-steps 3 \
+	  -s 7.5 \
+	  --rescore-mode 1 \
+          --db-load-mode 0 \
+          --split 0
+
+	rm -rf -- tmp
+        """
     }
-     */
 
 
     /*
      * Convert search results into an enriched profile.
+     */
     process createEnrichedProfile {
         label "mmseqs"
         label "big_task"
@@ -271,17 +310,70 @@ if ( params.enrich_profile ) {
         template "mmseqs_result_to_profile.sh"
     }
 
-    enrichedProfile.set { profile4Clu }
+    enrichedProfile.into { profile4CluSearch; profile4Clu }
 } else {
-    cascadeProfile.set { profile4Clu }
+    cascadeProfile.into { profile4CluSearch; profile4Clu }
 }
-     */
 
 
 /*
  * Perform the third clustering pass using sequence profiles.
  * This gets clusters down to about 10%-20% identity.
+ */
+process clusterProfileSearch {
+    label 'mmseqs'
+    label "big_task"
+
+    publishDir "${params.outdir}/clusters"
+
+    input:
+    file "input_profile" from profile4CluSearch
+
+    output:
+    file "profile_matches" into profileClusterSearchResults
+    file "profile_matches.tsv" into profileClusterSearchResultsTSV
+
+    script:
+    """
+    mkdir -p tmp
+    mkdir profile_matches
+    
+    mmseqs search \
+      "input_profile/db" \
+      "input_profile/db_consensus" \
+      "profile_matches/db" \
+      "tmp" \
+      --threads "${task.cpus}" \
+      --max-seqs 100 \
+      -c 0.8 \
+      --cov-mode 0 \
+      --start-sens 4 \
+      --sens-steps 3 \
+      -s 7.5 \
+      -e 0.00001 \
+      --e-profile 0.01 \
+      --db-load-mode 0 \
+      --split 0 \
+      --add-self-matches
+
+    mmseqs convertalis \
+      "input_profile/db" \
+      "input_profile/db_consensus" \
+      "profile_matches/db" \
+      "profile_matches.tsv" \
+      --threads "${task.cpus}" \
+      --format-mode 0 \
+      --format-output "query,target,evalue,qcov,tcov,gapopen,pident,nident,mismatch,raw,bits,qstart,qend,tstart,tend,qlen,tlen,alnlen"
+    
+    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "profile_matches.tsv"
+
+    rm -rf -- tmp
+    """
+}
+
+
 process clusterProfile {
+
     label 'mmseqs'
     label "big_task"
 
@@ -289,22 +381,28 @@ process clusterProfile {
 
     input:
     file "input_profile" from profile4Clu
+    file "profile_matches" from profileClusterSearchResults
 
     output:
     file "profile" into profileClusters
-    file "profile_matches.tsv" into profileClustersResults
 
     script:
-    INDB = "input_profile"
-    OUTDB = "profile"
-    NCPUS = task.cpus
-    template "mmseqs_cluster_profile.sh"
+    """
+    mkdir -p "profile"
+    mmseqs clust \
+      "input_profile/db" \
+      "profile_matches/db" \
+      "profile/db" \
+      --threads "${task.cpus}" \
+      --cluster-mode 0
+    """
+
 }
- */
 
 
 /*
  * Merge the clustering results into single db.
+ */
 process mergeClusters {
     label "mmseqs"
     label "big_task"
@@ -329,12 +427,12 @@ process mergeClusters {
       profile/db
     """
 }
- */
 
 
 /*
  * Extract information about each cluster.
  * E.G. cluster members, representative sequences, alignment statistics.
+ */
 process extractProfileClusterStats {
     label 'mmseqs'
     label "big_task"
@@ -356,197 +454,221 @@ process extractProfileClusterStats {
     NCPUS = task.cpus
     template "mmseqs_cluster_stats.sh"
 }
+
+
+/*
  */
+process clusterSeqdb {
+    label "mmseqs"
+    label "big_task"
 
+    input:
+    file "clusters" from mergedClusters
+    file "seq" from seqdb
 
-/*
-if ( params.mafft ) {
+    output:
+    file "cluster_seqs_*" into splitClusters mode flatten
 
-    process clusterSeqdb {
-        label "mmseqs"
-        label "big_task"
+    script:
+    """
+    mkdir -p cluster_seqs
+    mmseqs createseqfiledb "seq/db" "clusters/db" "cluster_seqs/db"
 
-        input:
-        file "clusters" from mergedClusters
-        file "seq" from seqdb
+    TARGET_CLUSTER_SIZE=10000
+    NCLUSTERS=\$(wc -l < "cluster_seqs/db.index")
+    NSPLITS=\$(( (\${NCLUSTERS} + \${TARGET_CLUSTER_SIZE} + 1) / \${TARGET_CLUSTER_SIZE} ))
 
-        output:
-        set "cluster_seqs_*{,.index}" into splitClusters mode flatten
-
-        """
-        mkdir -p cluster_seqs
-        mmseqs createseqfiledb "seq/db" "clusters/db" "cluster_seqs/db"
-
-        NCLUSTERS=\$(wc -l < "cluster_seqs/db.index")
-        NSPLITS=\$(( (\${NCLUSTERS} + 50000 + 1) / 50000 ))
-
-        mmseqs splitdb "cluster_seqs/db" "cluster_seqs" --split \${NSPLITS}
-        """
-
-    }
-
-
-    process mafftMSA {
-        label "mmseqs_mafft"
-        label "big_task"
-
-        input:
-        set file(db), file(db_index) from splitClusters
-            .map { [it.getSimpleName(), it] }
-            .groupTuple(by: 0, size: 2)
-            .map { bn, files -> files }
-
-        output:
-        set file("msas_${db.getName()}"), file("msas_${db_index.getName()}") into splitMuscleMSAs
-
-        """
-        mmseqs apply \
-          "${db}" \
-          "msas_${db.getName()}" \
-          -- \
-          mafft --retree 2 --maxiterate 2 --amino -
-        """
-    }
-
-    process combineSplitMSAs {
-        label "mmseqs"
-        publishDir "msas"
-        label "small_task"
-
-        input:
-        file "*" from msas4CombineSplitMSAs
-            .flatten()
-            .collect()
-
-        output:
-        file "mafft" into combinedMSAs
-
-        """
-        mkdir -p mafft
-        mmseqs concatdbs \$(find . -type f -not -name "*.index") mafft/db --preserve-keys
-        """
-    }
-
-} else {
-    process mmseqsMSA {
-        label 'mmseqs'
-        label "big_task"
-
-        publishDir "msas"
-
-        input:
-        file "seq" from seqdb
-        file "clusters" from mergedClusters
-
-        output:
-        file "mmseqs" into msa
-
-        """
-        mkdir -p mmseqs
-        mmseqs result2msa \
-          seq/db \
-          seq/db \
-          clusters/db \
-          mmseqs/db \
-          --compress \
-          --threads ${task.cpus}
-
-        cp seq/db_h mmseqs/db_header.ffdata
-        cp seq/db_h.index mmseqs/db_header.ffindex
-        cp seq/db mmseqs/db_sequence.ffdata
-        cp seq/db.index mmseqs/db_sequence.ffindex
-        """
-    }
+    mmseqs splitdb "cluster_seqs/db" "cluster_seqs" --split \${NSPLITS}
+    """
 }
-*/
+
+
+process mafftMSA {
+    label "mafft"
+    label "big_task"
+
+    input:
+    set file(db), file(db_type), file(db_index)  from splitClusters
+        .map { [it.getSimpleName(), it] }
+        .groupTuple(by: 0, size: 3)
+        .map { bn, files -> files }
+
+    output:
+    file "msas_${db.getName()}" into splitMafftMSAs
+
+    script:
+    """
+    mkdir -p "msas_${db.getName()}"
+    mpirun -np "${task.cpus}" mmseqs apply \
+      "${db}" \
+      "msas_${db.getName()}/db" \
+      --threads 1 \
+      -- \
+      run_mafft.sh
+    """
+}
+
+splitMafftMSAs.into {
+    splitMafftMSAs4CombineSplitMSAs;
+    splitMafftMSAs4EnrichMSA;
+}
+
+
+process combineSplitMSAs {
+    label "mmseqs"
+    label "small_task"
+
+    publishDir "${params.outdir}/msas"
+
+    input:
+    file "*" from splitMafftMSAs4CombineSplitMSAs.collect()
+
+    output:
+    file "mafft" into combinedMSAs
+
+    script:
+    """
+    for db in \$(find . -name "msas*")
+    do
+      if [ -e "mafft" ]
+      then
+        mkdir "reduce"
+        mmseqs concatdbs "mafft/db" "\${db}/db" "reduce/db" --preserve-keys
+        rm -rf -- "mafft"
+        mv "reduce" "mafft"
+      else
+        cp -r -L "\${db}" "mafft"
+      fi
+    done
+    """
+}
 
 
 /*
-process addCS219 {
+*/
+process enrichMSA {
+
+    label "mmseqs"
+    label "big_task"
+
+    input:
+    file "msa" from splitMafftMSAs4EnrichMSA
+    file "enrich" from enrichdb
+
+    output:
+    file "fas" into splitFas
+
+    script:
+    """
+    mkdir profile
+    mmseqs msa2profile msa/db profile/db --match-mode 1 --match-ratio 1 
+
+    mkdir search tmp
+    mmseqs search profile/db enrich/db search/db tmp -a 
+
+    mkdir fas
+    mmseqs result2msa profile/db enrich/db search/db fas/db
+
+    mv fas/db fas/db.ffdata
+    mv fas/db.dbtype fas/db.ffdata.dbtype
+    mv fas/db.index fas/db.ffindex
+
+    rm -rf -- profile search tmp
+    """
+}
+
+
+/*
+ */
+process fasToHHDB {
     label "hhsuite"
     label "big_task"
 
     input:
-    file "msa" from msa
+    file "fas" from splitFas
     file "hhdata" from hhdata
 
     output:
-    file "hhmmseqs" into hhcs219
+    file "hhdb" into splitHHDB
 
+    script:
     """
-    # Copy the directory because they all have to be kept together
-    # and the alternative is to have some weird mutable folder thing happening.
-    mkdir -p hhmmseqs
-    cp -r msa/* hhmmseqs
+    mkdir -p hhdb
+    cp fas/db.ffdata hhdb/db_fasta.ffdata
+    cp fas/db.ffdata.dbtype hhdb/db_fasta.ffdata.dbtype
+    cp fas/db.ffindex hhdb/db_fasta.ffindex
 
-    mpirun -np ${task.cpus} cstranslate_mpi \
-        -i hhmmseqs/db \
-        -o hhmmseqs/db_cs219 \
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        hhdb/db_fasta.ff{data,index} \
+        -i hhdb/db_a3m.ffindex \
+        -d hhdb/db_a3m.ffdata \
+        -- \
+        run_fas_to_a3m.sh
+
+    mpirun -np "${task.cpus}" cstranslate_mpi \
+        -i hhdb/db_a3m \
+        -o hhdb/db_cs219 \
         -x 0.3 \
         -c 4 \
         -b \
-        -I ca3m \
+        -I a3m \
         -A hhdata/cs219.lib \
         -D hhdata/context_data.lib
 
-    sort -k3 -n hhmmseqs/db_cs219.ffindex | cut -f1 > hhmmseqs/sorting.dat
-
-
-    ffindex_order hhmmseqs/sorting.dat \
-        hhmmseqs/db_ca3m.ff{data,index} \
-        db_ca3m_ordered.ff{data,index}
-
-    mv db_ca3m_ordered.ffdata hhmmseqs/db_ca3m.ffdata
-    mv db_ca3m_ordered.ffindex hhmmseqs/db_ca3m.ffindex
-
-
-    ffindex_order hhmmseqs/sorting.dat \
-        hhmmseqs/db_cs219.ff{data,index} \
-        db_cs219_ordered.ff{data,index}
-
-    mv db_cs219_ordered.ffdata hhmmseqs/db_cs219.ffdata
-    mv db_cs219_ordered.ffindex hhmmseqs/db_cs219.ffindex
-    """
-}
-
-
-process addHHM {
-    label "hhsuite"
-    label "big_task"
-
-    publishDir "msas"
-
-    input:
-    file "hhcs219" from hhcs219
-
-    output:
-    file "hhmmseqs" into hhmsas
-
-    """
-    mkdir -p hhmmseqs
-    ln -s \$(pwd)/hhcs219/* \$(pwd)/hhmmseqs
-
-    a3m_database_extract \
-        -i hhmmseqs/db_ca3m \
-        -o db_a3m \
-        -d hhmmseqs/db_sequence \
-        -q hhmmseqs/db_header
-
-    mpirun -np ${task.cpus} ffindex_apply_mpi \
-        db_a3m.ff{data,index} \
-        -i hhmmseqs/db_hhm.ffindex \
-        -d hhmmseqs/db_hhm.ffdata \
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        hhdb/db_a3m.ff{data,index} \
+        -i hhdb/db_hhm.ffindex \
+        -d hhdb/db_hhm.ffdata \
         -- \
         hhmake -i stdin -o stdout -v 0
-
-    ffindex_order hhmmseqs/sorting.dat \
-        hhmmseqs/db_hhm.ff{data,index} \
-        db_hhm_ordered.ff{data,index}
-
-    mv db_hhm_ordered.ffdata hhmmseqs/db_hhm.ffdata
-    mv db_hhm_ordered.ffindex hhmmseqs/db_hhm.ffindex
-
-    rm db_a3m.ff{data,index}
     """
 }
-*/
+
+
+process combineSplitHHsuiteDbs {
+
+    label "ffdb"
+    label "small_task"
+
+    publishDir "${params.outdir}"
+
+    input:
+    file "split_hhdata_*" from splitHHDB.collect()
+
+    output:
+    file "hhdata" into HHDB
+
+    script:
+    """
+    mkdir unsorted hhdata
+
+    ffdb combine \
+      -d unsorted/db_fasta.ffdata \
+      -i unsorted/db_fasta.ffindex \
+      split_hhdata_*/db_fasta.ff{data,index}
+
+    ffdb combine \
+      -d unsorted/db_a3m.ffdata \
+      -i unsorted/db_a3m.ffindex \
+      split_hhdata_*/db_a3m.ff{data,index}
+
+    ffdb combine \
+      -d unsorted/db_cs219.ffdata \
+      -i unsorted/db_cs219.ffindex \
+      split_hhdata_*/db_cs219.ff{data,index}
+
+    ffdb combine \
+      -d unsorted/db_hhm.ffdata \
+      -i unsorted/db_hhm.ffindex \
+      split_hhdata_*/db_hhm.ff{data,index}
+
+    sort -k3 -n unsorted/db_cs219.ffindex | cut -f1 > sorting.dat
+
+    ffindex_order sorting.dat unsorted/db_cs219.ff{data,index} hhdata/db_cs219.ff{data,index}
+    ffindex_order sorting.dat unsorted/db_a3m.ff{data,index} hhdata/db_a3m.ff{data,index}
+    ffindex_order sorting.dat unsorted/db_fasta.ff{data,index} hhdata/db_fasta.ff{data,index}
+    ffindex_order sorting.dat unsorted/db_hhm.ff{data,index} hhdata/db_hhm.ff{data,index}
+
+    # rm -rf -- unsorted
+    """
+}
