@@ -45,6 +45,7 @@ params.db = false
 params.enrich_db = false
 params.enrich_seqs = false
 
+// Options to skip steps, using provided datasets instead
 // Skip the clustering.
 params.clusters = false
 // Skip the multiple sequence alignment.
@@ -52,24 +53,38 @@ params.msas = false
 // Skip the hhsuite database construction.
 params.hhself = false
 
-//
+// Options to stop analyses at points.
+params.nomsa = false
 params.notree = false
+params.noremote = false
 
-// Don't do any of the hhsuite steps.
-params.nohh = false
+// Remote homology analyses options.
 params.hhdata = false
 
+// Provided hhsuite formatted databases to search against.
+// These should be in a directory, and the db name prefix should be 'pfam',
+// 'scop', 'pdb', or 'uniref'.
+// e.g. db/pfam_cs219.ff{data,index} db/pfam_a3m.ff{data,index} etc...
+//
+// I recognise that having to rename things is painful, but there are too many
+// files for each database to provide options for them individually.
 params.hhpfam = false
 params.hhscop = false
 params.hhpdb = false
 params.hhuniref = false
 
+// Use these hhblits results instead of running the analyses.
 params.hhmatches_self = false
 params.hhmatches_pfam = false
 params.hhmatches_scop = false
 params.hhmatches_pdb = false
 params.hhmatches_uniref = false
 
+
+def run_clustering = !params.clusters || !params.msas || !params.hhself
+def run_msa = (!params.msas || !params.hhself) && !params.nomsa
+def run_tree = (params.msas || run_msa) && !params.notree
+def run_remote = !params.hhself && !params.noremote
 
 //
 // STEP 0 - Input validation.
@@ -78,20 +93,33 @@ params.hhmatches_uniref = false
 if ( params.db ) {
 
     seqdb = Channel
-        .fromPath( params.db, type: 'dir', checkIfExists: true, glob: false )
+        .fromPath(
+            params.db,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
 } else if ( params.seqs ) {
 
     proteins = Channel
-        .fromPath( params.seqs, type: 'file', checkIfExists: true, glob: false )
+        .fromPath(
+            params.seqs,
+            type: 'file',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
     /*
      * Create the mmseqs2 sequence database
      */
     process createSequenceDB {
+
         label 'mmseqs'
+        label "small_task"
+
         publishDir "${params.outdir}/sequences"
 
         input:
@@ -105,32 +133,52 @@ if ( params.db ) {
         mkdir -p "seqdb"
         mmseqs createdb "seqs.fasta" "seqdb/db" --max-seq-len 14000
 
-	# mkdir -p tmp
+        # mkdir -p tmp
         # mmseqs createindex "seqdb/db" tmp --threads "${task.cpus}"
         # rm -rf -- tmp
         """
     }
 
-} else {
+} else if ( !run_clustering && !run_msa ) {
+
     seqdb = Channel.empty()
+
+} else {
+
+    log.error "The clustering and multiple sequence alignment stages " +
+              "require either '--seqs' or '--db' to be provided."
+    exit 1
 }
 
 
 if ( params.enrich_db ) {
 
     enrichdb = Channel
-        .fromPath( params.enrich_db, type: 'dir', checkIfExists: true, glob: false )
+        .fromPath(
+            params.enrich_db,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
 } else if ( params.enrich_seqs ) {
 
     enrichSeqs = Channel
-        .fromPath( params.enrich_seqs, type: 'file', checkIfExists: true, glob: false )
+        .fromPath(
+            params.enrich_seqs,
+            type: 'file',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
 
     process createEnrichSeqsDB {
+
         label 'mmseqs'
+        label "small_task"
+
         publishDir "${params.outdir}/sequences"
 
         input:
@@ -151,19 +199,34 @@ if ( params.enrich_db ) {
     }
 
 } else if ( param.db || params.seqs ) {
+
     enrichdb = seqdb
+
 } else {
-    enrichdb = Channel.empty()
+
+    log.error "An enrichment database is required for the clustering and " +
+              "hhsuite database construction stages. Please specify either " +
+              "'--enrich_seqs' or '--enrich_db'."
+    exit 1
+
 }
 
 
 if ( params.hhdata ) {
+
     hhdata = Channel
-        .fromPath( params.hhdata, type: 'dir', checkIfExists: true, glob: false )
+        .fromPath(
+            params.hhdata,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
-} else if ( !params.nohh ) {
+
+} else if ( run_remote ) {
 
     process getHHData {
+
         label "hhsuite"
         label "small_task"
 
@@ -186,7 +249,12 @@ if ( params.hhdata ) {
 if ( params.hhpfam ) {
 
     pfamdb = Channel
-        .fromPath( params.hhpfam, type: 'dir', checkIfExists: true, glob: false )
+        .fromPath(
+            params.hhpfam,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
 } else {
@@ -199,7 +267,12 @@ if ( params.hhpfam ) {
 if ( params.hhscop ) {
 
     scopdb = Channel
-        .fromPath( params.hhscop, type: 'dir', checkIfExists: true, glob: false )
+        .fromPath(
+            params.hhscop,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
 } else {
@@ -212,7 +285,12 @@ if ( params.hhscop ) {
 if ( params.hhpdb ) {
 
     pdbdb = Channel
-        .fromPath( params.hhpdb, type: 'dir', checkIfExists: true, glob: false )
+        .fromPath(
+            params.hhpdb,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
         .first()
 
 } else {
@@ -244,11 +322,12 @@ if ( params.hhuniref ) {
  * Perform the first pass clustering using basic mmseqs workflow.
  */
 process clusterCascade {
+
     label 'mmseqs'
     label "big_task"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "seq" from seqdb
@@ -257,21 +336,17 @@ process clusterCascade {
     file "cascade" into cascadeClusters
 
     script:
-    INDB = "seq"
-    OUTDB = "cascade"
-    NCPUS = task.cpus
-
     """
-    mkdir -p "${OUTDB}"
+    mkdir -p "cascade"
     mkdir -p tmp
 
     # mmseqs touchdb "${INDB}/db" --threads "${task.cpus}"
 
     mmseqs cluster \
-      "${INDB}/db" \
-      "${OUTDB}/db" \
+      "seq/db" \
+      "cascade/db" \
       tmp \
-      --threads "${NCPUS}" \
+      --threads "${task.cpus}" \
       --min-seq-id 0.0 \
       -c 0.8 \
       --cov-mode 0 \
@@ -296,7 +371,7 @@ process extractCascadeClusterStats {
     publishDir "${params.outdir}/clusters"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "seqs" from seqdb
@@ -329,7 +404,7 @@ process createProfile {
     publishDir "${params.outdir}/clusters"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "clusters" from cascadeClusters
@@ -356,7 +431,7 @@ process enrichProfile {
     label "big_task"
 
     when:
-    !params.clusters && ( params.enrich_db || params.enrich_seqs )
+    run_clustering && ( params.enrich_db || params.enrich_seqs )
 
     input:
     file "profile" from cascadeProfile
@@ -364,7 +439,7 @@ process enrichProfile {
     file "seqs" from seqdb
 
     output:
-    file "enrich_matches" into enrichedSearchResults 
+    file "enrich_matches" into enrichedSearchResults
 
     script:
     """
@@ -400,7 +475,7 @@ process createEnrichedProfile {
     label "big_task"
 
     when:
-    !params.clusters && ( params.enrich_db || params.enrich_seqs )
+    run_clustering && ( params.enrich_db || params.enrich_seqs )
 
     input:
     file "input_profile" from cascadeProfile
@@ -421,9 +496,13 @@ process createEnrichedProfile {
 
 
 if ( params.enrich_db || params.enrich_seqs ) {
+
     enrichedProfile.into { profile4CluSearch; profile4Clu }
+
 } else {
+
     cascadeProfile.into { profile4CluSearch; profile4Clu }
+
 }
 
 
@@ -437,7 +516,7 @@ process clusterProfileSearch {
     publishDir "${params.outdir}/clusters"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "input_profile" from profile4CluSearch
@@ -450,7 +529,7 @@ process clusterProfileSearch {
     """
     mkdir -p tmp
     mkdir profile_matches
-    
+
     mmseqs search \
       "input_profile/db" \
       "input_profile/db_consensus" \
@@ -477,7 +556,7 @@ process clusterProfileSearch {
       --threads "${task.cpus}" \
       --format-mode 0 \
       --format-output "query,target,evalue,qcov,tcov,gapopen,pident,nident,mismatch,raw,bits,qstart,qend,tstart,tend,qlen,tlen,alnlen"
-    
+
     sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "profile_matches.tsv"
 
     rm -rf -- tmp
@@ -496,7 +575,7 @@ process clusterProfile {
     publishDir "${params.outdir}/clusters"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "input_profile" from profile4Clu
@@ -529,7 +608,7 @@ process mergeClusters {
     publishDir "${params.outdir}/clusters"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "seq" from seqdb
@@ -562,7 +641,7 @@ process extractProfileClusterStats {
     publishDir "${params.outdir}/clusters"
 
     when:
-    !params.clusters
+    run_clustering
 
     input:
     file "profile" from mergedClusters
@@ -581,6 +660,24 @@ process extractProfileClusterStats {
 }
 
 
+if ( params.clusters ) {
+
+    clusters = Channel
+        .fromPath(
+            params.clusters,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
+        .first()
+
+} else {
+
+    clusters = mergedClusters
+
+}
+
+
 //
 // STEP 3. Get multiple sequence alignments of each cluster.
 //
@@ -593,8 +690,11 @@ process clusterSeqdb {
     label "mmseqs"
     label "big_task"
 
+    when:
+    run_msa
+
     input:
-    file "clusters" from mergedClusters
+    file "clusters" from clusters
     file "seq" from seqdb
 
     output:
@@ -622,7 +722,7 @@ process mafftMSA {
     label "big_task"
 
     input:
-    set file(db), file(db_type), file(db_index)  from splitClusters
+    set file(db), file(db_type), file(db_index) from splitClusters
         .map { [it.getSimpleName(), it] }
         .groupTuple(by: 0, size: 3)
         .map { bn, files -> files }
@@ -644,7 +744,7 @@ process mafftMSA {
 
 splitMSAs.into {
     splitMSAs4CombineSplitMSAs;
-    splitMSAs4EnrichMSA;
+    splitMSAs4DecideIfUser;
 }
 
 
@@ -687,8 +787,21 @@ process combineSplitMSAs {
 
 if ( params.msa ) {
 
+    userMsa = Channel
+        .fromPath(
+            params.msa,
+            type: 'dir',
+            checkIfExists: true,
+            glob: false
+        )
+        .first()
+    // Split the msa up!
+
 } else {
+
     msa = combinedMSAs
+    splitMSAs4EnrichMSA = splitMSAs4DecideIfUser
+
 }
 
 
@@ -725,10 +838,10 @@ process enrichMSA {
     script:
     """
     mkdir profile
-    mmseqs msa2profile msa/db profile/db --match-mode 1 --match-ratio 1 
+    mmseqs msa2profile msa/db profile/db --match-mode 1 --match-ratio 1
 
     mkdir search tmp
-    mmseqs search profile/db enrich/db search/db tmp -a 
+    mmseqs search profile/db enrich/db search/db tmp -a
 
     mkdir fas
     mmseqs result2msa profile/db enrich/db search/db fas/db
@@ -870,17 +983,17 @@ if ( params.hhmatches_self ) {
 } else {
 
     process searchSelf {
-    
+
         label "hhsuite"
         label "big_task"
-    
+
         input:
         file "subdb" from splitHHDB4SearchSelf
         file "hhdb" from HHDB
-    
+
         output:
         file "results" into splitSelfMatches
-    
+
         script:
         """
         mkdir results
@@ -918,17 +1031,17 @@ if ( params.hhmatches_pfam ) {
 } else {
 
     process searchPfam {
-    
+
         label "hhsuite"
         label "big_task"
-    
+
         input:
         file "hhdata" from splitHHDB4SearchPfam
         file "pfam" from pfamdb
-    
+
         output:
         file "results" into splitPfamMatches
-    
+
         script:
         """
         mkdir results
@@ -966,17 +1079,17 @@ if ( params.hhmatches_scop ) {
 } else {
 
     process searchScop {
-    
+
         label "hhsuite"
         label "big_task"
-    
+
         input:
         file "hhdata" from splitHHDB4SearchScop
         file "scop" from scopdb
-    
+
         output:
         file "results" into splitScopMatches
-    
+
         script:
         """
         mkdir results
@@ -1014,17 +1127,17 @@ if ( params.hhmatches_pdb ) {
 } else {
 
     process searchPdb {
-    
+
         label "hhsuite"
         label "big_task"
-    
+
         input:
         file "hhdata" from splitHHDB4SearchPdb
         file "pdb" from pdbdb
-    
+
         output:
         file "results" into splitPdbMatches
-    
+
         script:
         """
         mkdir results
@@ -1062,17 +1175,17 @@ if ( params.hhmatches_uniref ) {
 } else {
 
     process searchUniref {
-    
+
         label "hhsuite"
         label "big_task"
-    
+
         input:
         file "hhdata" from splitHHDB4SearchUniref
         file "uniref" from unirefdb
-    
+
         output:
         file "results" into splitUnirefMatches
-    
+
         script:
         """
         mkdir results
