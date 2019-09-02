@@ -7,6 +7,7 @@ ARG HHSUITE_REPO
 ARG HHSUITE_PREFIX_ARG
 ARG HHSUITE_CMAKE_OPTIONS
 ENV HHSUITE_PREFIX="${HHSUITE_PREFIX_ARG}"
+
 ENV HHLIB="${HHSUITE_PREFIX_ARG}"
 
 
@@ -30,29 +31,46 @@ RUN  set -eu \
   && git fetch --tags \
   && git checkout "tags/${HHSUITE_TAG}" \
   && git submodule update --init \
-  && cd lib/ffindex \
-  && git checkout master \
   && mkdir build \
   && cd build \
   && cmake \
        -G Ninja \
        -DHAVE_MPI=1 \
+       -DHAVE_SSE2=1 \
+       -DHAVE_AVX2=0 \
        -DCMAKE_BUILD_TYPE=Release \
        -DCMAKE_INSTALL_PREFIX="${HHSUITE_PREFIX}" \
        .. \
   && ninja \
   && ninja install \
+  && mv "${HHSUITE_PREFIX}/bin" "${HHSUITE_PREFIX}/bin-sse" \
   && cd /tmp \
+  && rm -rf -- build \
   && mkdir build \
   && cd build \
   && cmake \
        -G Ninja \
        -DHAVE_MPI=1 \
+       -DHAVE_AVX2=1 \
        -DCMAKE_BUILD_TYPE=Release \
        -DCMAKE_INSTALL_PREFIX="${HHSUITE_PREFIX}" \
        .. \
   && ninja \
-  && ninja install \ 
+  && ninja install \
+  && mv "${HHSUITE_PREFIX}/bin" "${HHSUITE_PREFIX}/bin-avx2" \
+  && mkdir "${HHSUITE_PREFIX}/bin" \
+  && echo '#!/usr/bin/env bash'                                  > "${HHSUITE_PREFIX}/template" \
+  && echo 'EXE=$(basename $0)'                                  >> "${HHSUITE_PREFIX}/template" \
+  && echo 'if $(grep -q -E '^flags.+avx2' /proc/cpuinfo); then' >> "${HHSUITE_PREFIX}/template" \
+  && echo '    exec "${HHSUITE_PREFIX}/bin-avx2/${EXE}" "$@"'   >> "${HHSUITE_PREFIX}/template" \
+  && echo 'else'                                                >> "${HHSUITE_PREFIX}/template" \
+  && echo '    exec "${HHSUITE_PREFIX}/bin-sse/${EXE}" "$@"'    >> "${HHSUITE_PREFIX}/template" \
+  && echo 'fi'                                                  >> "${HHSUITE_PREFIX}/template" \
+  && chmod a+x "${HHSUITE_PREFIX}/template" \
+  && for f in ${HHSUITE_PREFIX}/bin-sse/*; do \
+       cp "${HHSUITE_PREFIX}/template" ${HHSUITE_PREFIX}/bin/$(basename "${f}"); \
+     done \
+  && rm "${HHSUITE_PREFIX}/template" \
   && add_runtime_dep \
        libgomp1 \
        libstdc++6 \
@@ -65,8 +83,10 @@ FROM "${IMAGE}"
 ARG HHSUITE_VERSION
 ARG HHSUITE_PREFIX_ARG
 ENV HHSUITE_PREFIX="${HHSUITE_PREFIX_ARG}"
+
 ENV HHLIB="${HHSUITE_PREFIX_ARG}"
 LABEL hhsuite.version="${HHSUITE_TAG}"
+
 
 ENV PATH="${HHSUITE_PREFIX}/bin:${HHSUITE_PREFIX}/scripts:${PATH}"
 
