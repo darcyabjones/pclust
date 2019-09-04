@@ -139,15 +139,16 @@ if ( params.db ) {
         """
     }
 
-} else if ( !run_clustering && !run_msa ) {
-
-    seqdb = Channel.empty()
-
-} else {
+} else if ( run_clustering && run_msa ) {
 
     log.error "The clustering and multiple sequence alignment stages " +
               "require either '--seqs' or '--db' to be provided."
     exit 1
+
+} else {
+
+    seqdb = Channel.empty()
+
 }
 
 
@@ -721,6 +722,9 @@ process mafftMSA {
     label "mafft"
     label "big_task"
 
+    when:
+    run_msa
+
     input:
     set file(db), file(db_type), file(db_index) from splitClusters
         .map { [it.getSimpleName(), it] }
@@ -756,6 +760,9 @@ process combineSplitMSAs {
     label "small_task"
 
     publishDir "${params.outdir}/msas"
+
+    when:
+    run_msa
 
     input:
     file "*" from splitMSAs4CombineSplitMSAs.collect()
@@ -795,7 +802,76 @@ if ( params.msa ) {
             glob: false
         )
         .first()
-    // Split the msa up!
+
+
+    process processUserMSA {
+
+        label "mmseqs"
+        label "small_task"
+
+        input:
+        file "inmsa" from userMsa
+
+        output:
+        file "msa" into msa
+        file "split_msa_*" splitMSAs4EnrichMSA
+
+        script:
+        """
+        cp -r -L inmsa msa
+
+        if [ ! -e msa/db && -e msa/db.ffdata ]
+        then
+            ln -s msa/db.ffdata msa/db
+        elif [ ! -e msa/db.ffdata && -e msa/db ]
+        then
+            ln -s msa/db msa/db.ffdata
+        elif [ -e msa/db && -e msa/db.ffdata ]
+        then
+            true
+        else
+            echo "An msa was specified but there was no db or db.ffdata file!" 1>&2
+            exit 1
+        fi
+
+
+        if [ ! -e msa/db.index && -e msa/db.ffindex ]
+        then
+            ln -s msa/db.ffindex msa/db.index
+        elif [ ! -e msa/db.ffindex && -e msa/db.index ]
+        then
+            ln -s msa/db.index msa/db.ffindex
+        elif [ -e msa/db && -e msa/db.ffdata ]
+        then
+            true
+        else
+            echo "An msa was specified but there was no db.index or db.ffindex file!" 1>&2
+            exit 1
+        fi
+
+
+        # split the db
+        TARGET_CLUSTER_SIZE=10000
+        NCLUSTERS=\$(wc -l < "msa/db.index")
+        NSPLITS=\$(( (\${NCLUSTERS} + \${TARGET_CLUSTER_SIZE} + 1) / \${TARGET_CLUSTER_SIZE} ))
+
+        mmseqs splitdb "msa/db" "tmp_split_msa" --split \${NSPLITS}
+
+        for f in split_msa_*.index
+        do
+            BASENAME="${f%.index}"
+            DIRNAME="${BASENAME#tmp_}"
+
+            mkdir "${DIRNAME}"
+            mv "${f}" "${DIRNAME}/db.index"
+            ln -s "${DIRNAME}/db.index" "${DIRNAME}/db.ffindex"
+
+            mv "${BASENAME}" "${DIRNAME}/db"
+            ln -s "${DIRNAME}/db" "${DIRNAME}/db.ffdata"
+        done
+        """
+
+    }
 
 } else {
 
@@ -827,6 +903,9 @@ process enrichMSA {
 
     label "mmseqs"
     label "big_task"
+
+    when:
+    run_remote
 
     input:
     file "msa" from splitMSAs4EnrichMSA
@@ -861,6 +940,9 @@ process enrichMSA {
 process fasToHHDB {
     label "hhsuite"
     label "big_task"
+
+    when:
+    run_remote
 
     input:
     file "fas" from splitFas
@@ -924,6 +1006,9 @@ process combineSplitHHDBs {
 
     publishDir "${params.outdir}"
 
+    when:
+    run_remote
+
     input:
     file "split_hhdata_*" from splitHHDB4CombineSplitHHDBs.collect()
 
@@ -971,6 +1056,44 @@ process combineSplitHHDBs {
 //
 
 
+process searchSelf {
+
+    label "hhsuite"
+    label "big_task"
+
+    when:
+    run_remote && !params.hhmatches_self
+
+    input:
+    file "subdb" from splitHHDB4SearchSelf
+    file "hhdb" from HHDB
+
+    output:
+    file "results" into splitSelfMatchesTmp
+
+    script:
+    """
+    mkdir results
+    mpirun -np "${task.cpus}" hhblits_mpi \
+      -i subdb/db_hhm \
+      -d hhdb/db \
+      -o results/db_hhr \
+      -n 1 \
+      -cpu 1 \
+      -v 0 \
+      -e 0.001 \
+      -E 0.001 \
+      -z 0 \
+      -Z 20000 \
+      -b 0 \
+      -B 20000 \
+      -pre_evalue_thresh 100 \
+      -min_prefilter_hits 100 \
+      -realign_max 20000
+    """
+}
+
+
 if ( params.hhmatches_self ) {
 
     splitSelfMatches = Channel.fromPath(
@@ -982,42 +1105,47 @@ if ( params.hhmatches_self ) {
 
 } else {
 
-    process searchSelf {
-
-        label "hhsuite"
-        label "big_task"
-
-        input:
-        file "subdb" from splitHHDB4SearchSelf
-        file "hhdb" from HHDB
-
-        output:
-        file "results" into splitSelfMatches
-
-        script:
-        """
-        mkdir results
-        mpirun -np "${task.cpus}" hhblits_mpi \
-          -i subdb/db_hhm \
-          -d hhdb/db \
-          -o results/db_hhr \
-          -n 1 \
-          -cpu 1 \
-          -v 0 \
-          -e 0.001 \
-          -E 0.001 \
-          -z 0 \
-          -Z 20000 \
-          -b 0 \
-          -B 20000 \
-          -pre_evalue_thresh 100 \
-          -min_prefilter_hits 100 \
-          -realign_max 20000
-        """
-    }
+    splitSelfMatches = splitSelfMatchesTmp
 
 }
 
+
+process searchPfam {
+
+    label "hhsuite"
+    label "big_task"
+
+    when:
+    run_remote && params.hhmatches_pfam
+
+    input:
+    file "hhdata" from splitHHDB4SearchPfam
+    file "pfam" from pfamdb
+
+    output:
+    file "results" into splitPfamMatchesTmp
+
+    script:
+    """
+    mkdir results
+    mpirun -np "${task.cpus}" hhblits_mpi \
+      -i hhdata/db_hhm \
+      -d pfam/pfam \
+      -o results/db_hhr \
+      -n 1 \
+      -cpu 1 \
+      -v 0 \
+      -e 0.001 \
+      -E 0.001 \
+      -z 0 \
+      -Z 500 \
+      -b 0 \
+      -B 500 \
+      -pre_evalue_thresh 10 \
+      -min_prefilter_hits 10 \
+      -realign_max 500
+    """
+}
 
 if ( params.hhmatches_pfam ) {
 
@@ -1030,40 +1158,46 @@ if ( params.hhmatches_pfam ) {
 
 } else {
 
-    process searchPfam {
+    splitPfamMatches = splitSelfMatchesTmp
 
-        label "hhsuite"
-        label "big_task"
+}
 
-        input:
-        file "hhdata" from splitHHDB4SearchPfam
-        file "pfam" from pfamdb
 
-        output:
-        file "results" into splitPfamMatches
+process searchScop {
 
-        script:
-        """
-        mkdir results
-        mpirun -np "${task.cpus}" hhblits_mpi \
-          -i hhdata/db_hhm \
-          -d pfam/pfam \
-          -o results/db_hhr \
-          -n 1 \
-          -cpu 1 \
-          -v 0 \
-          -e 0.001 \
-          -E 0.001 \
-          -z 0 \
-          -Z 500 \
-          -b 0 \
-          -B 500 \
-          -pre_evalue_thresh 10 \
-          -min_prefilter_hits 10 \
-          -realign_max 500
-        """
-    }
+    label "hhsuite"
+    label "big_task"
 
+    when:
+    run_remote && !params.hhmatches_scop
+
+    input:
+    file "hhdata" from splitHHDB4SearchScop
+    file "scop" from scopdb
+
+    output:
+    file "results" into splitScopMatchesTmp
+
+    script:
+    """
+    mkdir results
+    mpirun -np "${task.cpus}" hhblits_mpi \
+      -i hhdata/db_hhm \
+      -d scop/scop \
+      -o results/db \
+      -n 1 \
+      -cpu 1 \
+      -v 0 \
+      -e 0.001 \
+      -E 0.001 \
+      -z 0 \
+      -Z 500 \
+      -b 0 \
+      -B 500 \
+      -pre_evalue_thresh 10 \
+      -min_prefilter_hits 10 \
+      -realign_max 500
+    """
 }
 
 
@@ -1078,42 +1212,47 @@ if ( params.hhmatches_scop ) {
 
 } else {
 
-    process searchScop {
-
-        label "hhsuite"
-        label "big_task"
-
-        input:
-        file "hhdata" from splitHHDB4SearchScop
-        file "scop" from scopdb
-
-        output:
-        file "results" into splitScopMatches
-
-        script:
-        """
-        mkdir results
-        mpirun -np "${task.cpus}" hhblits_mpi \
-          -i hhdata/db_hhm \
-          -d scop/scop \
-          -o results/db \
-          -n 1 \
-          -cpu 1 \
-          -v 0 \
-          -e 0.001 \
-          -E 0.001 \
-          -z 0 \
-          -Z 500 \
-          -b 0 \
-          -B 500 \
-          -pre_evalue_thresh 10 \
-          -min_prefilter_hits 10 \
-          -realign_max 500
-        """
-    }
+    splitScopMatches = splitScopMatchesTmp
 
 }
 
+
+process searchPdb {
+
+    label "hhsuite"
+    label "big_task"
+
+    when:
+    run_remote && !params.hhmatches_pdb
+
+    input:
+    file "hhdata" from splitHHDB4SearchPdb
+    file "pdb" from pdbdb
+
+    output:
+    file "results" into splitPdbMatchesTmp
+
+    script:
+    """
+    mkdir results
+    mpirun -np "${task.cpus}" hhblits_mpi \
+      -i hhdata/db_hhm \
+      -d pdb/pdb \
+      -o results/db \
+      -n 1 \
+      -cpu 1 \
+      -v 0 \
+      -e 0.001 \
+      -E 0.001 \
+      -z 10 \
+      -Z 500 \
+      -b 10 \
+      -B 500 \
+      -pre_evalue_thresh 10 \
+      -min_prefilter_hits 100 \
+      -realign_max 500
+    """
+}
 
 if ( params.hhmatches_pdb ) {
 
@@ -1126,42 +1265,47 @@ if ( params.hhmatches_pdb ) {
 
 } else {
 
-    process searchPdb {
-
-        label "hhsuite"
-        label "big_task"
-
-        input:
-        file "hhdata" from splitHHDB4SearchPdb
-        file "pdb" from pdbdb
-
-        output:
-        file "results" into splitPdbMatches
-
-        script:
-        """
-        mkdir results
-        mpirun -np "${task.cpus}" hhblits_mpi \
-          -i hhdata/db_hhm \
-          -d pdb/pdb \
-          -o results/db \
-          -n 1 \
-          -cpu 1 \
-          -v 0 \
-          -e 0.001 \
-          -E 0.001 \
-          -z 10 \
-          -Z 500 \
-          -b 10 \
-          -B 500 \
-          -pre_evalue_thresh 10 \
-          -min_prefilter_hits 100 \
-          -realign_max 500
-        """
-    }
+    splitPdbMatches = splitPdbMatchesTmp
 
 }
 
+
+process searchUniref {
+
+    label "hhsuite"
+    label "big_task"
+
+    when:
+    run_remote && !params.hhmatches_uniref
+
+    input:
+    file "hhdata" from splitHHDB4SearchUniref
+    file "uniref" from unirefdb
+
+    output:
+    file "results" into splitUnirefMatchesTmp
+
+    script:
+    """
+    mkdir results
+    mpirun -np "${task.cpus}" hhblits_mpi \
+      -i hhdata/db_hhm \
+      -d uniref/uniref \
+      -o results/db \
+      -n 1 \
+      -cpu 1 \
+      -v 0 \
+      -e 0.001 \
+      -E 0.001 \
+      -z 0 \
+      -Z 100 \
+      -b 0 \
+      -B 100 \
+      -pre_evalue_thresh 1 \
+      -min_prefilter_hits 10 \
+      -realign_max 100
+    """
+}
 
 if ( params.hhmatches_uniref ) {
 
@@ -1174,39 +1318,7 @@ if ( params.hhmatches_uniref ) {
 
 } else {
 
-    process searchUniref {
-
-        label "hhsuite"
-        label "big_task"
-
-        input:
-        file "hhdata" from splitHHDB4SearchUniref
-        file "uniref" from unirefdb
-
-        output:
-        file "results" into splitUnirefMatches
-
-        script:
-        """
-        mkdir results
-        mpirun -np "${task.cpus}" hhblits_mpi \
-          -i hhdata/db_hhm \
-          -d uniref/uniref \
-          -o results/db \
-          -n 1 \
-          -cpu 1 \
-          -v 0 \
-          -e 0.001 \
-          -E 0.001 \
-          -z 0 \
-          -Z 100 \
-          -b 0 \
-          -B 100 \
-          -pre_evalue_thresh 1 \
-          -min_prefilter_hits 10 \
-          -realign_max 100
-        """
-    }
+    splitUnirefMatches = splitSelfMatchesTmp
 
 }
 
@@ -1228,6 +1340,8 @@ process combineSearchMatches {
 
     publishDir "${params.outdir}/hhmatches"
 
+    tag "${database}"
+
     input:
     set val(database), file("split_results_*") from splitMatches
 
@@ -1236,11 +1350,11 @@ process combineSearchMatches {
 
     script:
     """
-    mkdir -p "${database}_matches"
+    mkdir -p "${database}"
 
     ffdb combine \
-      -d "${database}_matches/db_hhr.ffdata" \
-      -i "${database}_matches/db_hhr.ffindex" \
+      -d "${database}/db_hhr.ffdata" \
+      -i "${database}/db_hhr.ffindex" \
       split_results_*/db_hhr.ff{data,index}
     """
 }
