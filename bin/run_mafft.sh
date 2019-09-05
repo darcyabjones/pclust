@@ -7,5 +7,5 @@ if [ ${NSEQS} -le 1 ]
 then
   echo "${SEQS}"
 else
-  echo "${SEQS}" | mafft --retree 2 --maxiterate 2 --amino -
+  echo "${SEQS}" | mafft --pileup --anysymbol --quiet --auto --amino --ep 0.123 -
 fi
