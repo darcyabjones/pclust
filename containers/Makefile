@@ -1,7 +1,10 @@
 PWD=$(shell pwd)
 DEBIAN_VERSION=buster-20190708-slim
-TAG=pclust-v0.0.1
+PIPELINE_NAME=pclust
+PIPELINE_VERSION=v0.0.1
+TAG=$(PIPELINE_NAME)-$(PIPELINE_VERSION)
 MAINTAINER=darcy.ab.jones@gmail.com
+SINGULARITY_USER=darcyabjones
 DOCKER_USER=darcyabjones
 BASE_IMAGE=$(DOCKER_USER)/base:$(TAG)
 
@@ -41,22 +44,34 @@ OPEN=$(GENERAL)
 all: docker/all singularity/all
 
 # Docker targets
-docker: docker/panann
+docker: docker/pclust
+	touch $@
+
 docker/all: docker/general
+	touch $@
 
 docker/general: $(addprefix docker/,$(GENERAL))
+	touch $@
 
 # Singularity targets
-singularity: singularity/panann.sif
+singularity: singularity/pclust.sif
+	touch $@
+
 singularity/all: singularity/general
+	touch $@
 
 singularity/general: $(addprefix singularity/,$(addsuffix .sif,$(GENERAL)))
+	touch $@
 
 # Pull containers for dockerhub
-dockerpull: dockerpull/panann
-dockerpull/all: dockerpull/general
-dockerpull/general: $(addprefix dockerpull/,$(GENERAL))
+dockerpull: dockerpull/pclust
+	touch docker/$(notdir $@)
 
+dockerpull/all: dockerpull/general
+	touch docker/$(notdir $@)
+
+dockerpull/general: $(addprefix dockerpull/,$(GENERAL))
+	touch docker/$(notdir $@)
 
 # Utils
 clean:
@@ -75,11 +90,16 @@ tidy:
 # Generic rules
 singularity/%.sif: docker/%
 	@mkdir -p "$(dir $@)"
+	@mkdir -p "${PWD}/tmp"
 	SINGULARITY_TMPDIR="${PWD}/tmp" SINGULARITY_CACHEDIR="${PWD}/tmp/cache" singularity build \
 	  --force \
 	  --tmpdir "${PWD}/tmp" \
 	  "$@" \
 	  "docker-daemon://$(call make_image_name,$(notdir $(basename $@)))"
+
+singularity/push: singularity/pclust.sif
+	singularity sign $<
+	singularity push $< library://$(SINGULARITY_USER)/default/$(PIPELINE_NAME):$(PIPELINE_VERSION)
 
 docker/%.tar.gz: docker/%
 	@mkdir -p "$(dir $@)"
@@ -89,6 +109,10 @@ dockerpull/%:
 	docker pull "$(call make_image_name,$(notdir $@))"
 	@mkdir -p "$(dir $@)"
 	@touch docker/$(notdir $@)
+
+
+docker/push: docker/pclust
+	docker login --username $(DOCKER_USER)
 
 
 docker/base: base.Dockerfile
