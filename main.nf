@@ -370,11 +370,11 @@ process clusterCascade {
       "cascade/db" \
       "tmp" \
       --threads "${task.cpus}" \
-      --min-seq-id 0.0 \
+      --min-seq-id 0.3 \
       -c 0.8 \
       --cov-mode 0 \
       --cluster-steps 3 \
-      -s 6.5 \
+      -s 6 \
       --cluster-mode 0 \
       --db-load-mode 0
 
@@ -566,9 +566,10 @@ process clusterProfileSearch {
       --threads "${task.cpus}" \
       --max-seqs 100 \
       -c 0.8 \
+      --min-seq-id 0.1 \
       --cov-mode 0 \
-      --sens-steps 3 \
-      -s 7.5 \
+      --sens-steps 2 \
+      -s 6.5 \
       -e 0.00001 \
       --e-profile 0.01 \
       --db-load-mode 0 \
@@ -1049,6 +1050,9 @@ process enrichMSA {
       "search/db" \
       "tmp" \
       --threads "${task.cpus}" \
+      --alph-size 13 \
+      --sens-steps 2 \
+      -s 6 \
       -a \
       -e 0.00001 \
       --db-load-mode 0 \
