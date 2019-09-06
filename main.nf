@@ -36,7 +36,7 @@ def helpMessage() {
       --msas              Provide existing MSAs as an MMSeqs MSA database (fasta format).
       --hhself            Provide an existing HHsuite database of clusters to use.
       --hhdata            The path to the HHsuite data folder. If not provided will fetch
-                          from the $HHLIB environment variable.
+                          from the \$HHLIB environment variable.
       --hhpfam            The pfam database formatted as an HHsuite database.
       --hhscop            The scop database formatted as an HHsuite database.
       --hhpdb             The pdb database formatted as an HHsuite database.
@@ -161,10 +161,10 @@ if ( params.db ) {
         """
     }
 
-} else if ( run_clustering && run_msa ) {
+} else if ( run_clustering ) {
 
-    log.error "The clustering and multiple sequence alignment stages " +
-              "require either '--seqs' or '--db' to be provided."
+    log.error "The clustering stage " +
+              "requires either '--seqs' or '--db' to be provided."
     exit 1
 
 } else {
@@ -439,7 +439,7 @@ process createProfile {
     script:
     """
     mkdir -p "profile"
-    
+
     mmseqs result2profile \
       "seqs/db" \
       "seqs/db" \
@@ -514,7 +514,7 @@ process createEnrichedProfile {
     script:
     """
     mkdir -p "enriched_profile"
-    
+
     mmseqs result2profile \
       "input_profile/db" \
       "enrich_seqs/db" \
@@ -631,6 +631,7 @@ process mergeClusters {
 
     output:
     file "profile" into mergedClusters
+    file "profile_seqs" into mergedClustersSeqs
 
     """
     mkdir "profile"
@@ -640,6 +641,19 @@ process mergeClusters {
       "profile/db" \
       "cascade/db" \
       "profile_tmp/db"
+
+    mkdir "profile_seqs"
+    mmseqs createseqfiledb \
+      "seq/db" \
+      "profile/db" \
+      "profile_seqs/db"
+
+    ORIG="\${PWD}"
+    cd profile_seqs
+    ln -s db db.ffdata
+    ln -s db.dbtype db.ffdata.dbtype
+    ln -s db.index db.ffindex
+    cd \${ORIG}
     """
 }
 
@@ -688,7 +702,7 @@ if ( params.clusters ) {
 
 } else {
 
-    clusters = mergedClusters
+    clusters = mergedClustersSeqs
 
 }
 
@@ -701,7 +715,7 @@ if ( params.clusters ) {
  * Get fasta sequence databases from the cluster database and
  * and split the database into many parts to allow checkpointing.
  */
-process clusterSeqdb {
+process splitClusterSeqs {
 
     label "mmseqs"
     label "big_task"
@@ -710,7 +724,6 @@ process clusterSeqdb {
     run_msa
 
     input:
-    file "seq" from seqdb
     file "clusters" from clusters
 
     output:
@@ -718,14 +731,11 @@ process clusterSeqdb {
 
     script:
     """
-    mkdir "cluster_seqs"
-    mmseqs createseqfiledb "seq/db" "clusters/db" "cluster_seqs/db"
-
     TARGET_CLUSTER_SIZE=10000
-    NCLUSTERS=\$(wc -l < "cluster_seqs/db.index")
+    NCLUSTERS=\$(wc -l < "cluster/db.index")
     NSPLITS=\$(( (\${NCLUSTERS} + \${TARGET_CLUSTER_SIZE} + 1) / \${TARGET_CLUSTER_SIZE} ))
 
-    mmseqs splitdb "cluster_seqs/db" "tmp_split_seqs" --split \${NSPLITS}
+    mmseqs splitdb "cluster/db" "tmp_split_seqs" --split \${NSPLITS}
 
     for f in tmp_split_seqs_*.index
     do
@@ -737,8 +747,6 @@ process clusterSeqdb {
         mv "\${BASENAME}" "\${DIRNAME}/db"
         mv "\${BASENAME}.dbtype" "\${DIRNAME}/db.dbtype"
     done
-
-    rm -rf -- "cluster_seqs"
     """
 }
 
@@ -1211,11 +1219,11 @@ if ( params.hhself ) {
         # split the db
         TARGET_CLUSTER_SIZE=10000
 
-	ffdb split \
+        ffdb split \
           --size "\${TARGET_CLUSTER_SIZE}" \
           --basename "tmp_split_hhself_{index}.{ext}" \
           "hhself/db_hhm.ffdata" \
-          "hhself/db_hhm.ffindex" 
+          "hhself/db_hhm.ffindex"
 
         for f in tmp_split_hhself_*.ffindex
         do

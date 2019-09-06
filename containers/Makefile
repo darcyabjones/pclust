@@ -1,7 +1,10 @@
 PWD=$(shell pwd)
 DEBIAN_VERSION=buster-20190708-slim
-TAG=pclust-v0.0.1
+PIPELINE_NAME=pclust
+PIPELINE_VERSION=v0.0.1
+TAG=$(PIPELINE_NAME)-$(PIPELINE_VERSION)
 MAINTAINER=darcy.ab.jones@gmail.com
+SINGULARITY_USER=darcyabjones
 DOCKER_USER=darcyabjones
 BASE_IMAGE=$(DOCKER_USER)/base:$(TAG)
 
@@ -35,28 +38,40 @@ FFDB_REPO=https://github.com/darcyabjones/ffdb.git
 FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
 
 
-GENERAL=mmseqs python3 posix hhsuite mafft fasttree
+GENERAL=base mmseqs python3 hhsuite mafft fasttree ffdb
 OPEN=$(GENERAL)
 
 all: docker/all singularity/all
 
 # Docker targets
-docker: docker/panann
+docker: docker/pclust
+	touch $@
+
 docker/all: docker/general
+	touch $@
 
 docker/general: $(addprefix docker/,$(GENERAL))
+	touch $@
 
 # Singularity targets
-singularity: singularity/panann.sif
+singularity: singularity/pclust.sif
+	touch $@
+
 singularity/all: singularity/general
+	touch $@
 
 singularity/general: $(addprefix singularity/,$(addsuffix .sif,$(GENERAL)))
+	touch $@
 
 # Pull containers for dockerhub
-dockerpull: dockerpull/panann
-dockerpull/all: dockerpull/general
-dockerpull/general: $(addprefix dockerpull/,$(GENERAL))
+dockerpull: dockerpull/pclust
+	touch docker/$(notdir $@)
 
+dockerpull/all: dockerpull/general
+	touch docker/$(notdir $@)
+
+dockerpull/general: $(addprefix dockerpull/,$(GENERAL))
+	touch docker/$(notdir $@)
 
 # Utils
 clean:
@@ -75,11 +90,16 @@ tidy:
 # Generic rules
 singularity/%.sif: docker/%
 	@mkdir -p "$(dir $@)"
+	@mkdir -p "${PWD}/tmp"
 	SINGULARITY_TMPDIR="${PWD}/tmp" SINGULARITY_CACHEDIR="${PWD}/tmp/cache" singularity build \
 	  --force \
 	  --tmpdir "${PWD}/tmp" \
 	  "$@" \
 	  "docker-daemon://$(call make_image_name,$(notdir $(basename $@)))"
+
+singularity/push: singularity/pclust.sif
+	singularity sign $<
+	singularity push $< library://$(SINGULARITY_USER)/default/$(PIPELINE_NAME):$(PIPELINE_VERSION)
 
 docker/%.tar.gz: docker/%
 	@mkdir -p "$(dir $@)"
@@ -89,6 +109,10 @@ dockerpull/%:
 	docker pull "$(call make_image_name,$(notdir $@))"
 	@mkdir -p "$(dir $@)"
 	@touch docker/$(notdir $@)
+
+
+docker/push: docker/pclust
+	docker login --username $(DOCKER_USER)
 
 
 docker/base: base.Dockerfile
@@ -104,16 +128,6 @@ docker/base: base.Dockerfile
 
 
 docker/python3: python3.Dockerfile docker/base
-	docker build \
-	  --build-arg IMAGE="$(BASE_IMAGE)" \
-	  --file $< \
-	  -t "$(call make_image_name,$@)" \
-	  .
-	@mkdir -p "$(dir $@)"
-	@touch $@
-
-
-docker/posix: posix.Dockerfile docker/base
 	docker build \
 	  --build-arg IMAGE="$(BASE_IMAGE)" \
 	  --file $< \
@@ -191,6 +205,32 @@ docker/fasttree: fasttree.Dockerfile docker/base docker/mmseqs
 	  --build-arg MMSEQS_IMAGE="$(call make_image_name,mmseqs)" \
 	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
 	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --file $< \
+	  -t "$(call make_image_name,$@)" \
+	  .
+	@mkdir -p "$(dir $@)"
+	@touch $@
+
+
+docker/pclust: pclust.Dockerfile docker/all
+	docker build \
+	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg PYTHON3_IMAGE="$(call make_image_name,python3)" \
+	  --build-arg MMSEQS_IMAGE="$(call make_image_name,mmseqs)" \
+	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
+	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --build-arg HHSUITE_IMAGE="$(call make_image_name,hhsuite)" \
+	  --build-arg HHSUITE_TAG="$(HHSUITE_TAG)" \
+	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
+	  --build-arg MAFFT_IMAGE="$(call make_image_name,mafft)" \
+	  --build-arg MAFFT_VERSION="$(MAFFT_VERSION)" \
+	  --build-arg MAFFT_PREFIX_ARG="$(MAFFT_PREFIX_ARG)" \
+	  --build-arg FASTTREE_IMAGE="$(call make_image_name,fasttree)" \
+	  --build-arg FASTTREE_VERSION="$(FASTTREE_VERSION)" \
+	  --build-arg FASTTREE_PREFIX_ARG="$(FASTTREE_PREFIX_ARG)" \
+	  --build-arg FFDB_IMAGE="$(call make_image_name,ffdb)" \
+	  --build-arg FFDB_TAG="$(FFDB_TAG)" \
+	  --build-arg FFDB_PREFIX_ARG="$(FFDB_PREFIX_ARG)" \
 	  --file $< \
 	  -t "$(call make_image_name,$@)" \
 	  .
