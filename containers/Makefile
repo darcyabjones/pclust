@@ -35,7 +35,7 @@ FFDB_REPO=https://github.com/darcyabjones/ffdb.git
 FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
 
 
-GENERAL=mmseqs python3 posix hhsuite mafft fasttree
+GENERAL=base mmseqs python3 hhsuite mafft fasttree ffdb
 OPEN=$(GENERAL)
 
 all: docker/all singularity/all
@@ -113,16 +113,6 @@ docker/python3: python3.Dockerfile docker/base
 	@touch $@
 
 
-docker/posix: posix.Dockerfile docker/base
-	docker build \
-	  --build-arg IMAGE="$(BASE_IMAGE)" \
-	  --file $< \
-	  -t "$(call make_image_name,$@)" \
-	  .
-	@mkdir -p "$(dir $@)"
-	@touch $@
-
-
 docker/mmseqs: mmseqs.Dockerfile docker/base
 	docker build \
 	  --build-arg IMAGE="$(BASE_IMAGE)" \
@@ -191,6 +181,32 @@ docker/fasttree: fasttree.Dockerfile docker/base docker/mmseqs
 	  --build-arg MMSEQS_IMAGE="$(call make_image_name,mmseqs)" \
 	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
 	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --file $< \
+	  -t "$(call make_image_name,$@)" \
+	  .
+	@mkdir -p "$(dir $@)"
+	@touch $@
+
+
+docker/pclust: pclust.Dockerfile docker/all
+	docker build \
+	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg PYTHON3_IMAGE="$(call make_image_name,python3)" \
+	  --build-arg MMSEQS_IMAGE="$(call make_image_name,mmseqs)" \
+	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
+	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --build-arg HHSUITE_IMAGE="$(call make_image_name,hhsuite)" \
+	  --build-arg HHSUITE_TAG="$(HHSUITE_TAG)" \
+	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
+	  --build-arg MAFFT_IMAGE="$(call make_image_name,mafft)" \
+	  --build-arg MAFFT_VERSION="$(MAFFT_VERSION)" \
+	  --build-arg MAFFT_PREFIX_ARG="$(MAFFT_PREFIX_ARG)" \
+	  --build-arg FASTTREE_IMAGE="$(call make_image_name,fasttree)" \
+	  --build-arg FASTTREE_VERSION="$(FASTTREE_VERSION)" \
+	  --build-arg FASTTREE_PREFIX_ARG="$(FASTTREE_PREFIX_ARG)" \
+	  --build-arg FFDB_IMAGE="$(call make_image_name,ffdb)" \
+	  --build-arg FFDB_TAG="$(FFDB_TAG)" \
+	  --build-arg FFDB_PREFIX_ARG="$(FFDB_PREFIX_ARG)" \
 	  --file $< \
 	  -t "$(call make_image_name,$@)" \
 	  .
