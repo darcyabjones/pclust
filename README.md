@@ -46,6 +46,7 @@ if you provide the config option.
 To pull the images manually:
 
 ```
+singularity key pull 43791281018404BF71E1BAD5D520C428FF69B8C1
 singularity pull library://darcyabjones/default/pclust:v0.0.1
 
 # or

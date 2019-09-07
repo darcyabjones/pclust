@@ -482,7 +482,7 @@ process enrichProfile {
       --threads "${task.cpus}" \
       --max-seqs 300 \
       -e 0.00001 \
-      --e-profile 0.01 \
+      -s 5 \
       --rescore-mode 1 \
       --db-load-mode 0 \
       --split 0
@@ -727,15 +727,15 @@ process splitClusterSeqs {
     file "clusters" from clusters
 
     output:
-    file "split_seqs_*" into splitClusters
+    file "split_seqs_*" into splitClusters mode flatten
 
     script:
     """
     TARGET_CLUSTER_SIZE=10000
-    NCLUSTERS=\$(wc -l < "cluster/db.index")
+    NCLUSTERS=\$(wc -l < "clusters/db.index")
     NSPLITS=\$(( (\${NCLUSTERS} + \${TARGET_CLUSTER_SIZE} + 1) / \${TARGET_CLUSTER_SIZE} ))
 
-    mmseqs splitdb "cluster/db" "tmp_split_seqs" --split \${NSPLITS}
+    mmseqs splitdb "clusters/db" "tmp_split_seqs" --split \${NSPLITS}
 
     for f in tmp_split_seqs_*.index
     do
@@ -1056,8 +1056,6 @@ process enrichMSA {
       "search/db" \
       "tmp" \
       --threads "${task.cpus}" \
-      --alph-size 13 \
-      --sens-steps 2 \
       -s 6 \
       -a \
       -e 0.00001 \
