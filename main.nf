@@ -822,9 +822,12 @@ process combineSplitMSAs {
       fi
     done
 
-    ln -s "msas/db" "msas/db.ffdata"
-    ln -s "msas/db.dbtype" "msas/db.ffdata.dbtype"
-    ln -s "msas/db.index" "msas/db.ffindex"
+    ORIG=\${PWD}
+    cd msas
+    ln -s "db" "db.ffdata"
+    ln -s "db.dbtype" "db.ffdata.dbtype"
+    ln -s "db.index" "db.ffindex"
+    cd "\${ORIG}"
     """
 }
 
@@ -857,16 +860,18 @@ if ( params.msas ) {
         """
         cp -r -L inmsas msas
 
+        ORIG=\${PWD}
+
         if [ ! -e msas/db ] && [ -e msas/db.ffdata ]
         then
             cd msas
             ln -s db.ffdata db
-            cd ..
+            cd "\${ORIG}"
         elif [ ! -e msas/db.ffdata ] && [ -e msas/db ]
         then
             cd msas
             ln -s db db.ffdata
-            cd ..
+            cd "\${ORIG}"
         elif [ -e msas/db ] && [ -e msas/db.ffdata ]
         then
             true
@@ -880,12 +885,12 @@ if ( params.msas ) {
         then
             cd msas
             ln -s db.ffindex db.index
-            cd ..
+            cd "\${ORIG}"
         elif [ ! -e msas/db.ffindex ] && [ -e msas/db.index ]
         then
             cd msas
             ln -s db.index db.ffindex
-            cd ..
+            cd "\${ORIG}"
         elif [ -e msas/db ] && [ -e msas/db.ffdata ]
         then
             true
@@ -911,7 +916,6 @@ if ( params.msas ) {
             mv "\${f}" "\${DIRNAME}/db.index"
             mv "\${BASENAME}" "\${DIRNAME}/db"
 
-            ORIG="\${PWD}"
             cd "\${DIRNAME}"
             ln -s "db.index" "db.ffindex"
             ln -s "db" "db.ffdata"
@@ -1007,9 +1011,14 @@ process combineSplitTrees {
       fi
     done
 
-    ln -s "trees/db" "trees/db.ffdata"
-    ln -s "trees/db.dbtype" "trees/db.ffdata.dbtype"
-    ln -s "trees/db.index" "trees/db.ffindex"
+    ORIG="\${PWD}"
+
+    cd trees
+    ln -s "db" "db.ffdata"
+    ln -s "db.dbtype" "db.ffdata.dbtype"
+    ln -s "db.index" "db.ffindex"
+
+    cd "\${ORIG}"
     """
 }
 
@@ -1064,14 +1073,32 @@ process enrichMSA {
       --db-load-mode 0 \
       --split 0
 
+    mkdir "search_msas"
+    mmseqs result2msa \
+      "profile/db" \
+      "enrich/db" \
+      "search/db" \
+      "search_msas/db" \
+      --skip-query 1
+
     mkdir "enriched_msas"
-    mmseqs result2msa "profile/db" "enrich/db" "search/db" "enriched_msas/db"
+    ffdb join_concat \
+      -d "enriched_msas/db" \
+      -i "enriched_msas/db.index" \
+      "msas/db" "search_msas/db" \
+      "msas/db.index" "search_msas/db.index"
 
-    mv "enriched_msas/db" "enriched_msas/db.ffdata"
-    mv "enriched_msas/db.dbtype" "enriched_msas/db.ffdata.dbtype"
-    mv "enriched_msas/db.index" "enriched_msas/db.ffindex"
+    cp -L "msas/db.dbtype" "enriched_msas/db.dbtype"
 
-    rm -rf -- "profile" "search" "tmp"
+    ORIG="\${PWD}"
+    cd enriched_msas
+    ln -s "db" "db.ffdata"
+    ln -s "db.dbtype" "db.ffdata.dbtype"
+    ln -s "db.index" "db.ffindex"
+
+    cd "\${ORIG}"
+
+    rm -rf -- "profile" "search" "search_msas" "tmp"
     """
 }
 
@@ -1097,9 +1124,9 @@ process fasToHHDB {
     script:
     """
     mkdir -p hhdb
-    cp "enriched_msas/db.ffdata" "hhdb/db_fasta.ffdata"
-    cp "enriched_msas/db.ffdata.dbtype" "hhdb/db_fasta.ffdata.dbtype"
-    cp "enriched_msas/db.ffindex" "hhdb/db_fasta.ffindex"
+    cp -L "enriched_msas/db.ffdata" "hhdb/db_fasta.ffdata"
+    cp -L "enriched_msas/db.ffdata.dbtype" "hhdb/db_fasta.ffdata.dbtype"
+    cp -L "enriched_msas/db.ffindex" "hhdb/db_fasta.ffindex"
 
     mpirun -np "${task.cpus}" ffindex_apply_mpi \
         hhdb/db_fasta.ff{data,index} \
@@ -1140,7 +1167,7 @@ splitHHDB.into {
  */
 process combineSplitHHDBs {
 
-    label "ffdb"
+    label "hhsuite"
     label "small_task"
 
     publishDir "${params.outdir}"

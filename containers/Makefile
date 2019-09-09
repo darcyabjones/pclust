@@ -1,7 +1,7 @@
 PWD=$(shell pwd)
-DEBIAN_VERSION=buster-20190708-slim
+DEBIAN_VERSION=buster-20190812-slim
 PIPELINE_NAME=pclust
-PIPELINE_VERSION=v0.0.1
+PIPELINE_VERSION=v0.0.2
 TAG=$(PIPELINE_NAME)-$(PIPELINE_VERSION)
 MAINTAINER=darcy.ab.jones@gmail.com
 SINGULARITY_USER=darcyabjones
@@ -33,7 +33,7 @@ FASTTREE_VERSION=2.1.11
 FASTTREE_URL=http://www.microbesonline.org/fasttree/FastTree-2.1.11.c
 FASTTREE_PREFIX_ARG=$(INSTALL_BASE)/fasttree/$(FASTTREE_VERSION)
 
-FFDB_TAG=v0.0.1
+FFDB_TAG=v0.0.2
 FFDB_REPO=https://github.com/darcyabjones/ffdb.git
 FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
 
@@ -137,12 +137,12 @@ docker/python3: python3.Dockerfile docker/base
 	@touch $@
 
 
-docker/mmseqs: mmseqs.Dockerfile docker/base
+docker/ffdb: ffdb.Dockerfile docker/base
 	docker build \
 	  --build-arg IMAGE="$(BASE_IMAGE)" \
-	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
-	  --build-arg MMSEQS_REPO="$(MMSEQS_REPO)" \
-	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --build-arg FFDB_TAG="$(FFDB_TAG)" \
+	  --build-arg FFDB_REPO="$(FFDB_REPO)" \
+	  --build-arg FFDB_PREFIX_ARG="$(FFDB_PREFIX_ARG)" \
 	  --file $< \
 	  -t "$(call make_image_name,$@)" \
 	  .
@@ -150,29 +150,32 @@ docker/mmseqs: mmseqs.Dockerfile docker/base
 	@touch $@
 
 
-docker/hhsuite: hhsuite.Dockerfile docker/base
+docker/mmseqs: mmseqs.Dockerfile docker/base docker/ffdb
+	docker build \
+	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
+	  --build-arg MMSEQS_REPO="$(MMSEQS_REPO)" \
+	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --build-arg FFDB_IMAGE="$(call make_image_name,ffdb)" \
+	  --build-arg FFDB_TAG="$(FFDB_TAG)" \
+	  --build-arg FFDB_PREFIX_ARG="$(FFDB_PREFIX_ARG)" \
+	  --file $< \
+	  -t "$(call make_image_name,$@)" \
+	  .
+	@mkdir -p "$(dir $@)"
+	@touch $@
+
+
+docker/hhsuite: hhsuite.Dockerfile docker/base docker/ffdb
 	docker build \
 	  --build-arg IMAGE="$(BASE_IMAGE)" \
 	  --build-arg HHSUITE_TAG="$(HHSUITE_TAG)" \
 	  --build-arg HHSUITE_REPO="$(HHSUITE_REPO)" \
 	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
 	  --build-arg HHSUITE_CMAKE_OPTIONS="$(HHSUITE_CMAKE_OPTIONS)" \
-	  --file $< \
-	  -t "$(call make_image_name,$@)" \
-	  .
-	@mkdir -p "$(dir $@)"
-	@touch $@
-
-
-docker/ffdb: ffdb.Dockerfile docker/base docker/hhsuite
-	docker build \
-	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg FFDB_IMAGE="$(call make_image_name,ffdb)" \
 	  --build-arg FFDB_TAG="$(FFDB_TAG)" \
-	  --build-arg FFDB_REPO="$(FFDB_REPO)" \
 	  --build-arg FFDB_PREFIX_ARG="$(FFDB_PREFIX_ARG)" \
-	  --build-arg HHSUITE_IMAGE="$(call make_image_name,hhsuite)" \
-	  --build-arg HHSUITE_TAG="$(HHSUITE_TAG)" \
-	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
 	  --file $< \
 	  -t "$(call make_image_name,$@)" \
 	  .

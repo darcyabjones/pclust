@@ -1,8 +1,6 @@
 ARG IMAGE
 ARG HHSUITE_IMAGE
 
-FROM "${HHSUITE_IMAGE}" as hhsuite_builder
-
 FROM "${IMAGE}" as ffdb_builder
 
 ARG FFDB_TAG
@@ -45,19 +43,6 @@ ENV PYTHONPATH "${FFDB_PREFIX}/lib/python3.7/site-packages:${PYTHONPATH}"
 
 COPY --from=ffdb_builder "${FFDB_PREFIX}" "${FFDB_PREFIX}"
 COPY --from=ffdb_builder "${APT_REQUIREMENTS_FILE}" /build/apt/ffdb.txt
-
-
-ARG HHSUITE_TAG
-ARG HHSUITE_PREFIX_ARG
-ENV HHSUITE_PREFIX="${HHSUITE_PREFIX_ARG}"
-
-ENV HHLIB="${HHSUITE_PREFIX_ARG}"
-LABEL hhsuite.version="${HHSUITE_TAG}"
-
-ENV PATH="${HHSUITE_PREFIX}/bin:${HHSUITE_PREFIX}/scripts:${PATH}"
-
-COPY --from=hhsuite_builder "${HHSUITE_PREFIX}" "${HHSUITE_PREFIX}"
-COPY --from=hhsuite_builder "${APT_REQUIREMENTS_FILE}" /build/apt/hhsuite.txt
 
 RUN  set -eu \
   && DEBIAN_FRONTEND=noninteractive \
