@@ -30,7 +30,9 @@ def helpMessage() {
     Options:
       --nomsa             Stop the pipeline after clustering.
       --tree              Predict quick phylogenetic trees for each MSA.
-      --noremote          Stop the pipeline after MSAs, and don't run the HMM-HMM comparisons.
+      --noremote_build    Don't build the hhsuite database from the MSAs.
+      --noremote          Stop the pipeline after building the hhsuite database,
+                          and don't run the HMM-HMM comparisons.
       --clusters          Provide existing clusters as an MMseqs database instead of using
                           the built-in pipeline. Note that the seq database must also be provided.
       --msas              Provide existing MSAs as an MMSeqs MSA database (fasta format).
@@ -79,6 +81,7 @@ params.hhself = false
 // Options to stop analyses at points.
 params.nomsa = false
 params.tree = false
+params.noremote_build = false
 params.noremote = false
 
 // Remote homology analyses options.
@@ -107,7 +110,7 @@ params.hhmatches_uniref = false
 def run_clustering = !params.clusters && !params.msas && !params.hhself
 def run_msa = (run_clustering || !params.msas) && !params.hhself && !params.nomsa
 def run_tree = (run_msa || params.msas) && params.tree
-def run_remote_build = (run_msa || !params.hhself) && !params.noremote
+def run_remote_build = (run_msa || !params.hhself) && !params.noremote_build
 def run_remote = (run_remote_build || params.hhself) && !params.noremote
 
 
@@ -1087,6 +1090,9 @@ process enrichMSA {
       -i "enriched_msas/db.index" \
       "msas/db" "search_msas/db" \
       "msas/db.index" "search_msas/db.index"
+
+    # Would be good to sort by num msa columns to help balance load.
+    # Not necessary short-term, order seems like that anyway.
 
     cp -L "msas/db.dbtype" "enriched_msas/db.dbtype"
 
