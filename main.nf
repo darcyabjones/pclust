@@ -250,7 +250,7 @@ if ( params.hhdata ) {
         )
         .first()
 
-} else if ( run_remote ) {
+} else if ( run_remote_build ) {
 
     process getHHData {
 
@@ -857,7 +857,7 @@ if ( params.msas ) {
 
         output:
         file "msas" into msas
-        file "split_msas_*" into splitUserMSAs
+        file "split_msa_*" into splitUserMSAs mode flatten
 
         script:
         """
@@ -1074,7 +1074,9 @@ process enrichMSA {
       -a \
       -e 0.00001 \
       --db-load-mode 0 \
-      --split 0
+      --split 0 \
+      --split-mode 1
+
 
     mkdir "search_msas"
     mmseqs result2msa \
@@ -1094,10 +1096,10 @@ process enrichMSA {
     # Would be good to sort by num msa columns to help balance load.
     # Not necessary short-term, order seems like that anyway.
 
-    cp -L "msas/db.dbtype" "enriched_msas/db.dbtype"
+    cp -L "search_msas/db.dbtype" "enriched_msas/db.dbtype"
 
     ORIG="\${PWD}"
-    cd enriched_msas
+    cd "enriched_msas"
     ln -s "db" "db.ffdata"
     ln -s "db.dbtype" "db.ffdata.dbtype"
     ln -s "db.index" "db.ffindex"
