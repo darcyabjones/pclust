@@ -15,3 +15,4 @@ clusters
 containers/tmp
 containers/docker
 containers/singularity
+__pycache__
