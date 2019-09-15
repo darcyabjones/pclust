@@ -33,7 +33,7 @@ FASTTREE_VERSION=2.1.11
 FASTTREE_URL=http://www.microbesonline.org/fasttree/FastTree-2.1.11.c
 FASTTREE_PREFIX_ARG=$(INSTALL_BASE)/fasttree/$(FASTTREE_VERSION)
 
-FFDB_TAG=v0.0.2
+FFDB_TAG=db9d8a5
 FFDB_REPO=https://github.com/darcyabjones/ffdb.git
 FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
 

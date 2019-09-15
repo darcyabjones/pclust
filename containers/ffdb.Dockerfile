@@ -26,7 +26,7 @@ RUN  set -eu \
   && update-ca-certificates \
   && git clone "${FFDB_REPO}" . \
   && git fetch --tags \
-  && git checkout "tags/${FFDB_TAG}" \
+  && git checkout "${FFDB_TAG}" \
   && pip3 install --prefix="${FFDB_PREFIX}" . \
   && add_runtime_dep python3
 
