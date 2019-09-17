@@ -106,6 +106,7 @@ params.hhmatches_scop = false
 params.hhmatches_pdb = false
 params.hhmatches_uniref = false
 
+params.split_size = 50000
 
 def run_clustering = !params.clusters && !params.msas && !params.hhself
 def run_msa = (run_clustering || !params.msas) && !params.hhself && !params.nomsa
@@ -736,7 +737,7 @@ process splitClusterSeqs {
 
     script:
     """
-    TARGET_CLUSTER_SIZE=10000
+    TARGET_CLUSTER_SIZE="${params.split_size}"
     NCLUSTERS=\$(wc -l < "clusters/db.index")
     NSPLITS=\$(( (\${NCLUSTERS} + \${TARGET_CLUSTER_SIZE} + 1) / \${TARGET_CLUSTER_SIZE} ))
 
@@ -904,7 +905,7 @@ if ( params.msas ) {
 
 
         # split the db
-        TARGET_CLUSTER_SIZE=10000
+        TARGET_CLUSTER_SIZE="${params.split_size}"
         NCLUSTERS=\$(wc -l < "msas/db.index")
         NSPLITS=\$(( (\${NCLUSTERS} + \${TARGET_CLUSTER_SIZE} + 1) / \${TARGET_CLUSTER_SIZE} ))
 
@@ -1132,9 +1133,16 @@ process fasToHHDB {
     script:
     """
     mkdir -p hhdb
-    cp -L "enriched_msas/db.ffdata" "hhdb/db_fasta.ffdata"
+
+    # This should probably get moved to the enrich MSA task for next run.
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        enriched_msas/db.ff{data,index} \
+        -i "hhdb/db_fasta.ffindex" \
+        -d "hhdb/db_fasta.ffdata" \
+        -- \
+        tidy_joined_alignments.py
+
     cp -L "enriched_msas/db.ffdata.dbtype" "hhdb/db_fasta.ffdata.dbtype"
-    cp -L "enriched_msas/db.ffindex" "hhdb/db_fasta.ffindex"
 
     mpirun -np "${task.cpus}" ffindex_apply_mpi \
         hhdb/db_fasta.ff{data,index} \
@@ -1178,8 +1186,6 @@ process combineSplitHHDBs {
     label "hhsuite"
     label "small_task"
 
-    publishDir "${params.outdir}"
-
     when:
     run_remote_build
 
@@ -1187,40 +1193,109 @@ process combineSplitHHDBs {
     file "split_hhdata_*" from splitHHDB4CombineSplitHHDBs.collect()
 
     output:
+    set file("db_cs219.ffdata"),
+        file("db_cs219.ffindex") into hhselfCS219
+
+    set val("fasta"),
+        file("order.txt"),
+        file("db_fasta.ffdata"),
+        file("db_fasta.ffindex") into hhselfFasta
+
+    set val("a3m"),
+        file("order.txt"),
+        file("db_a3m.ffdata"),
+        file("db_a3m.ffindex") into hhselfA3m
+
+    set val("hhm"),
+        file("order.txt"),
+        file("db_hhm.ffdata"),
+        file("db_hhm.ffindex") into hhselfHHM
+
+    script:
+    """
+    cat split_hhdata_*/db_cs219.ffindex \
+    | sort -k3,3n \
+    | cut -f1 \
+    > order.txt
+
+
+    ffdb combine \
+      --order "order.txt" \
+      -d "db_cs219.ffdata" \
+      -i "db_cs219.ffindex" \
+      split_hhdata_*/db_cs219.ff{data,index}
+
+    ffdb combine \
+      -d "db_fasta.ffdata" \
+      -i "db_fasta.ffindex" \
+      split_hhdata_*/db_fasta.ff{data,index}
+
+    ffdb combine \
+      -d "db_a3m.ffdata" \
+      -i "db_a3m.ffindex" \
+      split_hhdata_*/db_a3m.ff{data,index}
+
+    ffdb combine \
+      -d "db_hhm.ffdata" \
+      -i "db_hhm.ffindex" \
+      split_hhdata_*/db_hhm.ff{data,index}
+    """
+}
+
+
+process sortCombinedHHDBs {
+
+    label "hhsuite"
+    label "bigmem_task"
+    
+    tag "${kind}"
+
+    when:
+    run_remote_build
+
+    input:
+    set val(kind),
+        file("order.txt"),
+        file("db.ffdata"),
+        file("db.ffindex") from hhselfFasta
+            .mix( hhselfA3m, hhselfHHM )
+
+    output:
+    set file("db_${kind}.ffdata"),
+        file("db_${kind}.ffindex") into hhselfSorted
+
+    script:
+    """
+    ffindex_order \
+      "order.txt" \
+      db.ff{data,index} \
+      db_${kind}.ff{data,index}
+    """
+}
+
+
+process combineSortedHHDBs {
+
+    label "posix"
+    label "small_task"
+
+    publishDir "${params.outdir}"
+
+    when:
+    run_remote_build
+
+    input:
+    file "*" from hhselfCS219
+        .concat(hhselfSorted)
+        .collect() 
+
+    output:
     file "hhself" into HHDBTMP
 
     script:
     """
-    mkdir "unsorted" "hhself"
-
-    ffdb combine \
-      -d "unsorted/db_fasta.ffdata" \
-      -i "unsorted/db_fasta.ffindex" \
-      split_hhdata_*/db_fasta.ff{data,index}
-
-    ffdb combine \
-      -d "unsorted/db_a3m.ffdata" \
-      -i "unsorted/db_a3m.ffindex" \
-      split_hhdata_*/db_a3m.ff{data,index}
-
-    ffdb combine \
-      -d "unsorted/db_cs219.ffdata" \
-      -i "unsorted/db_cs219.ffindex" \
-      split_hhdata_*/db_cs219.ff{data,index}
-
-    ffdb combine \
-      -d "unsorted/db_hhm.ffdata" \
-      -i "unsorted/db_hhm.ffindex" \
-      split_hhdata_*/db_hhm.ff{data,index}
-
-    sort -k3 -n "unsorted/db_cs219.ffindex" | cut -f1 > "sorting.dat"
-
-    ffindex_order "sorting.dat" unsorted/db_cs219.ff{data,index} hhself/db_cs219.ff{data,index}
-    ffindex_order "sorting.dat" unsorted/db_a3m.ff{data,index} hhself/db_a3m.ff{data,index}
-    ffindex_order "sorting.dat" unsorted/db_fasta.ff{data,index} hhself/db_fasta.ff{data,index}
-    ffindex_order "sorting.dat" unsorted/db_hhm.ff{data,index} hhself/db_hhm.ff{data,index}
-
-    rm -rf -- "unsorted"
+    mkdir hhself
+    cp -L *.ff{data,index} hhself
     """
 }
 
@@ -1252,7 +1327,7 @@ if ( params.hhself ) {
         script:
         """
         # split the db
-        TARGET_CLUSTER_SIZE=10000
+        TARGET_CLUSTER_SIZE="${params.split_size}"
 
         ffdb split \
           --size "\${TARGET_CLUSTER_SIZE}" \
