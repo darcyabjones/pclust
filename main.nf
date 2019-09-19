@@ -68,7 +68,7 @@ params.db = false
 params.enrich_db = false
 params.enrich_seqs = false
 
-params.noenrich_cluster = false
+params.enrich_cluster = false
 
 // Options to skip steps, using provided datasets instead
 // Skip the clustering.
@@ -380,7 +380,7 @@ process clusterCascade {
       -c 0.8 \
       --cov-mode 0 \
       --cluster-steps 3 \
-      -s 6 \
+      -s 5 \
       --cluster-mode 0 \
       --db-load-mode 0
 
@@ -465,7 +465,7 @@ process enrichProfile {
     label "big_task"
 
     when:
-    run_clustering && ( params.enrich_db || params.enrich_seqs ) && !params.noenrich_cluster
+    run_clustering && ( params.enrich_db || params.enrich_seqs ) && params.enrich_cluster
 
     input:
     file "profile" from cascadeProfile
@@ -507,7 +507,7 @@ process createEnrichedProfile {
     label "big_task"
 
     when:
-    run_clustering && ( params.enrich_db || params.enrich_seqs ) && !params.noenrich_cluster
+    run_clustering && ( params.enrich_db || params.enrich_seqs ) && params.enrich_cluster
 
     input:
     file "input_profile" from cascadeProfile
@@ -531,7 +531,7 @@ process createEnrichedProfile {
 }
 
 
-if ( (params.enrich_db || params.enrich_seqs) && !params.noenrich_cluster ) {
+if ( (params.enrich_db || params.enrich_seqs) && params.enrich_cluster ) {
 
     enrichedProfile.into { profile4CluSearch; profile4Clu }
 
@@ -572,9 +572,9 @@ process clusterProfileSearch {
       --threads "${task.cpus}" \
       --max-seqs 100 \
       -c 0.8 \
-      --min-seq-id 0.1 \
-      --cov-mode 0 \
-      -s 6.5 \
+      --min-seq-id 0.3 \
+      --cov-mode 1 \
+      -s 6.0 \
       -e 0.00001 \
       --db-load-mode 0 \
       --split 0 \
@@ -611,7 +611,7 @@ process clusterProfile {
       "profile_matches/db" \
       "profile/db" \
       --threads "${task.cpus}" \
-      --cluster-mode 0
+      --cluster-mode 2
     """
 
 }

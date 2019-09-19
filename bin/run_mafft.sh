@@ -11,23 +11,25 @@ then
   # Good but slow.
   echo "${SEQS}" \
   | mafft \
+      --quiet \
       --anysymbol \
       --inputorder \
-      --quiet \
       --bl 30 \
       --genafpair \
       --maxiterate 1000 \
       --amino \
       --ep 0.0 \
       -
+
+
 elif [ ${NSEQS} -le 10000 ]
 then
   # OK but faster
   echo "${SEQS}" \
   | mafft \
+      --quiet \
       --anysymbol \
       --inputorder \
-      --quiet \
       --bl 30 \
       --6merpair \
       --retree 2 \
@@ -42,9 +44,9 @@ else
   # super gappy.
   echo "${SEQS}" \
   | mafft \
+      --quiet \
       --anysymbol \
       --inputorder \
-      --quiet \
       --bl 30 \
       --parttree \
       --retree 1 \
@@ -52,5 +54,6 @@ else
       --nofft \
       --amino \
       --op 1.53 \
-      --ep 0.123
+      --ep 0.123 \
+      -
 fi

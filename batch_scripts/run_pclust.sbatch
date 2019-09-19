@@ -9,7 +9,8 @@
 #SBATCH --mail-user=darcy.a.jones@postgrad.curtin.edu.au
 #SBATCH --export=NONE
 
-module load nextflow/18.10.1-bin
+module load nextflow/19.01.0.5050-bin
+module load singularity/3.3.0
 #      --seqs              description
 #      --db
 #      --enrich_seqs
@@ -23,4 +24,10 @@ module load nextflow/18.10.1-bin
 #      --enrich_db
 #      --enrich_msa
 
-nextflow run -resume -profile pawsey_zeus ./pclust.nf --max_cpus 28 --nomsa_refine --seqs "sequences/proteins.faa" --enrich_seqs "databases/uniclust50_2018_08/uniclust50_2018_08_consensus.fasta" --enrich_msa
+nextflow run -resume \
+  -profile pawsey_zeus,singularity \
+  ./main.nf \
+  --seqs nr_leq5000.fasta \
+  --enrich_seqs enrich_seqs.fasta \
+  --noremote \
+  --outdir run
