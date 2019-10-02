@@ -106,7 +106,7 @@ params.hhmatches_scop = false
 params.hhmatches_pdb = false
 params.hhmatches_uniref = false
 
-params.split_size = 50000
+params.split_size = 20000
 
 def run_clustering = !params.clusters && !params.msas && !params.hhself
 def run_msa = (run_clustering || !params.msas) && !params.hhself && !params.nomsa
@@ -1193,7 +1193,9 @@ process combineSplitHHDBs {
     file "split_hhdata_*" from splitHHDB4CombineSplitHHDBs.collect()
 
     output:
-    set file("db_cs219.ffdata"),
+    set val("cs219"),
+        file("order.txt"),
+        file("db_cs219.ffdata"),
         file("db_cs219.ffindex") into hhselfCS219
 
     set val("fasta"),
@@ -1218,9 +1220,7 @@ process combineSplitHHDBs {
     | cut -f1 \
     > order.txt
 
-
     ffdb combine \
-      --order "order.txt" \
       -d "db_cs219.ffdata" \
       -i "db_cs219.ffindex" \
       split_hhdata_*/db_cs219.ff{data,index}
@@ -1246,7 +1246,7 @@ process combineSplitHHDBs {
 process sortCombinedHHDBs {
 
     label "hhsuite"
-    label "bigmem_task"
+    label "small_task"
     
     tag "${kind}"
 
@@ -1257,8 +1257,8 @@ process sortCombinedHHDBs {
     set val(kind),
         file("order.txt"),
         file("db.ffdata"),
-        file("db.ffindex") from hhselfFasta
-            .mix( hhselfA3m, hhselfHHM )
+        file("db.ffindex") from hhselfCS219
+            .mix( hhselfFasta, hhselfA3m, hhselfHHM )
 
     output:
     set file("db_${kind}.ffdata"),
@@ -1285,9 +1285,7 @@ process combineSortedHHDBs {
     run_remote_build
 
     input:
-    file "*" from hhselfCS219
-        .concat(hhselfSorted)
-        .collect() 
+    file "*" from hhselfSorted.collect() 
 
     output:
     file "hhself" into HHDBTMP
@@ -1295,7 +1293,7 @@ process combineSortedHHDBs {
     script:
     """
     mkdir hhself
-    cp -L *.ff{data,index} hhself
+    ln -sf "\${PWD}/"*.ff{data,index} "\${PWD}/hhself"
     """
 }
 

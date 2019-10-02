@@ -21,8 +21,7 @@ then
       --ep 0.0 \
       -
 
-
-elif [ ${NSEQS} -le 10000 ]
+elif [ ${NSEQS} -le 5000 ]
 then
   # OK but faster
   echo "${SEQS}" \
@@ -57,3 +56,4 @@ else
       --ep 0.123 \
       -
 fi
+
