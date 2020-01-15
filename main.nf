@@ -70,43 +70,6 @@ params.enrich_seqs = false
 
 params.enrich_cluster = false
 
-// Options to skip steps, using provided datasets instead
-// Skip the clustering.
-params.clusters = false
-// Skip the multiple sequence alignment.
-params.msas = false
-// Skip the hhsuite database construction.
-params.hhself = false
-
-// Options to stop analyses at points.
-params.nomsa = false
-params.tree = false
-params.noremote_build = false
-params.noremote = false
-
-// Remote homology analyses options.
-params.hhdata = false
-
-// Provided hhsuite formatted databases to search against.
-// These should be in a directory, and the db name prefix should be 'pfam',
-// 'scop', 'pdb', or 'uniref'.
-// e.g. db/pfam_cs219.ff{data,index} db/pfam_a3m.ff{data,index} etc...
-//
-// I recognise that having to rename things is painful, but there are too many
-// files for each database to provide options for them individually.
-params.hhpfam = false
-params.hhscop = false
-params.hhpdb = false
-params.hhuniref = false
-
-// Use these hhblits results instead of running the analyses.
-params.hhmatches_self = false
-params.hhmatches_pfam = false
-params.hhmatches_scop = false
-params.hhmatches_pdb = false
-params.hhmatches_uniref = false
-
-params.split_size = 20000
 
 def run_clustering = !params.clusters && !params.msas && !params.hhself
 def run_msa = (run_clustering || !params.msas) && !params.hhself && !params.nomsa
@@ -118,6 +81,68 @@ def run_remote = (run_remote_build || params.hhself) && !params.noremote
 //
 // STEP 0 - Input validation.
 //
+
+
+
+/*
+ * Create HHsuite databases for each MSA chunk.
+ */
+process fasToHHDB {
+
+    label "hhsuite"
+    label "big_task"
+
+    when:
+    run_remote_build
+
+    input:
+    file "enriched_msas" from enrichedMSAs
+    file "hhdata" from hhdata
+
+    output:
+    file "hhdb" into splitHHDB
+
+    script:
+    """
+    mkdir -p hhdb
+
+    # This should probably get moved to the enrich MSA task for next run.
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        enriched_msas/db.ff{data,index} \
+        -i "hhdb/db_fasta.ffindex" \
+        -d "hhdb/db_fasta.ffdata" \
+        -- \
+        tidy_joined_alignments.py
+
+    cp -L "enriched_msas/db.ffdata.dbtype" "hhdb/db_fasta.ffdata.dbtype"
+
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        hhdb/db_fasta.ff{data,index} \
+        -i "hhdb/db_a3m.ffindex" \
+        -d "hhdb/db_a3m.ffdata" \
+        -- \
+        run_fas_to_a3m.sh
+
+    mpirun -np "${task.cpus}" cstranslate_mpi \
+        -i "hhdb/db_a3m" \
+        -o "hhdb/db_cs219" \
+        -x 0.3 \
+        -c 4 \
+        -b \
+        -I a3m \
+        -A "hhdata/cs219.lib" \
+        -D "hhdata/context_data.lib"
+
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        hhdb/db_a3m.ff{data,index} \
+        -i "hhdb/db_hhm.ffindex" \
+        -d "hhdb/db_hhm.ffdata" \
+        -- \
+        hhmake -i stdin -o stdout -v 0
+    """
+}
+
+
 
 if ( params.db ) {
 
@@ -144,28 +169,8 @@ if ( params.db ) {
     /*
      * Create the mmseqs2 sequence database
      */
-    process createSequenceDB {
 
-        label 'mmseqs'
-        label "small_task"
-
-        publishDir "${params.outdir}/sequences"
-
-        when:
-        run_clustering || run_remote_build
-
-        input:
-        file "seqs.fasta" from proteins
-
-        output:
-        file "seqdb" into seqdb
-
-        script:
-        """
-        mkdir -p "seqdb"
-        mmseqs createdb "seqs.fasta" "seqdb/db" --max-seq-len 14000
-        """
-    }
+    createSequenceDB()
 
 } else if ( run_clustering ) {
 
@@ -961,10 +966,10 @@ process constructTree {
     run_tree
 
     input:
-    file "msas" from splitMSAs4ConstructTree
+    path "msas" from splitMSAs4ConstructTree
 
     output:
-    file "trees" into splitTrees
+    path "trees" into splitTrees
 
     script:
     """
@@ -995,10 +1000,10 @@ process combineSplitTrees {
     run_tree
 
     input:
-    file "split_trees_*" from splitTrees.collect()
+    path "split_trees_*" from splitTrees.collect()
 
     output:
-    file "trees" into combinedTrees
+    path "trees" into combinedTrees
 
     script:
     """
@@ -1045,15 +1050,12 @@ process enrichMSA {
     label "mmseqs"
     label "big_task"
 
-    when:
-    run_remote_build
-
     input:
-    file "msas" from splitMSAs4EnrichMSA
-    file "enrich" from enrichdb
+    path "msas" from splitMSAs4EnrichMSA
+    path "enrich" from enrichdb
 
     output:
-    file "enriched_msas" into enrichedMSAs
+    path "enriched_msas" into enrichedMSAs
 
     script:
     """
@@ -1120,15 +1122,12 @@ process fasToHHDB {
     label "hhsuite"
     label "big_task"
 
-    when:
-    run_remote_build
-
     input:
-    file "enriched_msas" from enrichedMSAs
-    file "hhdata" from hhdata
+    path "enriched_msas"
+    path "hhdata"
 
     output:
-    file "hhdb" into splitHHDB
+    path "hhdb"
 
     script:
     """
@@ -1247,7 +1246,7 @@ process sortCombinedHHDBs {
 
     label "hhsuite"
     label "small_task"
-    
+
     tag "${kind}"
 
     when:
