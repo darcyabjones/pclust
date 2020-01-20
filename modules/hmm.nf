@@ -45,6 +45,21 @@ process create_hhdb {
 }
 
 
+process copy_hhdata {
+
+    label "hhsuite"
+    label "small_task"
+
+    output:
+    path "hhdata", emit: hhdata
+
+    script:
+    """
+    cp -r \${HHLIB}/data hhdata
+    """
+}
+
+
 process find_hhdbs_order {
 
     label "posix"
@@ -118,7 +133,7 @@ process combine_sorted_hhdbs {
           path("db_ahm.ffindex")
 
     output:
-    path "hhself"
+    path "hhself", emit: db
 
     script:
     """
@@ -130,9 +145,13 @@ process combine_sorted_hhdbs {
 
 process search_hmms {
 
+    label "hhsuite"
+    label "big_task"
+
     input:
     path "query"
     path "target"
+    val nrealign
 
     output:
     path "matches"
@@ -150,11 +169,34 @@ process search_hmms {
       -e 0.001 \
       -E 0.001 \
       -z 0 \
-      -Z 20000 \
+      -Z "${nrealign}" \
       -b 0 \
-      -B 20000 \
-      -pre_evalue_thresh 100 \
-      -min_prefilter_hits 100 \
-      -realign_max 20000
+      -B "${nrealign}" \
+      -pre_evalue_thresh 10 \
+      -min_prefilter_hits 10 \
+      -realign_max "${nrealign}"
+    """
+}
+
+
+process combine_ffdbs {
+
+    label "ffdb"
+    label "small_task"
+
+    input:
+    path "split_results_*"
+
+    output:
+    path "combined"
+
+    script:
+    """
+    mkdir -p "combined"
+
+    ffdb combine \
+      -d "combined/db_hhr.ffdata" \
+      -i "combined/db_hhr.ffindex" \
+      split_results_*/db_hhr.ff{data,index}
     """
 }

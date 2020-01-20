@@ -33,15 +33,15 @@ process msa_to_profile {
     path "msas"
 
     output:
-    path "profiles", emit: profiles
+    path "msa_profiles", emit: profiles
 
     script:
     """
-    mkdir -p "profiles"
+    mkdir -p "msa_profiles"
 
     mmseqs msa2profile \
       "msas/db" \
-      "profile/db" \
+      "msa_profiles/db" \
       --match-mode 1 \
       --match-ratio 1
     """
@@ -59,17 +59,17 @@ process create_profiles_from_search {
     path "matches"
 
     output:
-    path "profiles", emit: profiles
+    path "search_profiles", emit: profiles
 
     script:
     """
-    mkdir -p "profiles"
+    mkdir -p "search_profiles"
 
     mmseqs result2profile \
       "query_db/db" \
       "target_db/db" \
       "matches/db" \
-      "profiles/db" \
+      "search_profiles/db" \
       --threads "${task.cpus}"
     """
 }
@@ -213,7 +213,7 @@ process enrich_msas_from_search {
     path "matches"
 
     output:
-    path "enriched", emit: enriched
+    path "enriched_msas", emit: enriched
 
     script:
     """
@@ -232,10 +232,10 @@ process enrich_msas_from_search {
       "msas/db" "match_msas/db" \
       "msas/db.index" "match_msas/db.index"
 
-    mkdir "enriched"
+    mkdir "enriched_msas"
     mpirun -np ${task.cpus} mmseqs apply \
         "concatenated/db" \
-        "enriched/db" \
+        "enriched_msas/db" \
         --threads 1 \
         -- \
         tidy_joined_alignments.py
@@ -243,10 +243,10 @@ process enrich_msas_from_search {
     # Would be good to sort by num msa columns to help balance load.
     # Not necessary short-term, order seems like that anyway.
 
-    cp -L "match_msas/db.dbtype" "enriched/db.dbtype"
+    cp -L "match_msas/db.dbtype" "enriched_msas/db.dbtype"
 
     ORIG="\${PWD}"
-    cd "enriched"
+    cd "enriched_msas"
     ln -s "db" "db.ffdata"
     ln -s "db.dbtype" "db.ffdata.dbtype"
     ln -s "db.index" "db.ffindex"
@@ -275,16 +275,16 @@ process cascade_cluster {
     path "seqs"
 
     output:
-    path "clusters", emit: clusters
+    path "cascade", emit: clusters
 
     script:
     """
-    mkdir -p "clusters"
+    mkdir -p "cascade"
     mkdir -p "tmp"
 
     mmseqs cluster \
       "seqs/db" \
-      "clusters/db" \
+      "cascade/db" \
       "tmp" \
       --threads "${task.cpus}" \
       --min-seq-id 0.3 \
@@ -312,11 +312,12 @@ process extract_cluster_stats {
     input:
     path "seqs"
     path "clusters"
+    val name
 
     output:
-    path "clusters.tsv", emit: clusters
-    path "clusters_rep.fasta", emit: representative
-    path "clusters_stats.tsv", emit: stats
+    path "${name}.tsv", emit: clusters
+    path "${name}_rep.fasta", emit: representative
+    path "${name}_stats.tsv", emit: stats
 
     script:
     """
@@ -324,10 +325,10 @@ process extract_cluster_stats {
       "seqs/db" \
       "seqs/db" \
       "clusters/db" \
-      "clusters.tsv" \
+      "${name}.tsv" \
       --threads ${task.cpus}
 
-    sed -i '1i cluster\tmember' "clusters.tsv"
+    sed -i '1i cluster\tmember' "${name}.tsv"
 
 
     mmseqs result2repseq \
@@ -340,7 +341,7 @@ process extract_cluster_stats {
       "seqs/db" \
       "seqs/db" \
       "clusters_rep" \
-      "clusters_rep.fasta" \
+      "${name}_rep.fasta" \
       --use-fasta-header
 
 
@@ -357,12 +358,12 @@ process extract_cluster_stats {
       "seqs/db" \
       "seqs/db" \
       align \
-      "clusters_stats.tsv" \
+      "${name}_stats.tsv" \
       --threads ${task.cpus} \
       --format-mode 0 \
       --format-output 'query,target,evalue,qcov,tcov,gapopen,pident,nident,mismatch,raw,bits,qstart,qend,tstart,tend,qlen,tlen,alnlen'
 
-    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "clusters_stats.tsv"
+    sed -i '1i query\ttarget\tevalue\tqcov\ttcov\tgapopen\tpident\tnident\tmismatch\traw\tbits\tqstart\tqend\ttstart\ttend\tqlen\ttlen\talnlen' "${name}_stats.tsv"
     """
 }
 
@@ -410,15 +411,15 @@ process merge_clusters_by_other_clusters {
     path "parent_clusters"
 
     output:
-    path "clusters", emit: clusters
+    path "profile", emit: clusters
 
     script:
     """
-    mkdir "clusters"
+    mkdir "profile"
 
     mmseqs mergeclusters \
       "seqs/db" \
-      "clusters/db" \
+      "profile/db" \
       "child_clusters/db" \
       "parent_clusters/db"
     """
@@ -433,21 +434,22 @@ process get_cluster_seqs {
     input:
     path "seqs"
     path "clusters"
+    val name
 
     output:
-    path "cluster_seqs", emit: "seqs"
+    path "${name}_seqs", emit: "seqs"
 
     script:
     """
-    mkdir -p "cluster_seqs"
+    mkdir -p "${name}_seqs"
 
     mmseqs createseqfiledb \
       "seqs/db" \
       "clusters/db" \
-      "cluster_seqs/db"
+      "${name}_seqs/db"
 
     ORIG="\${PWD}"
-    cd cluster_seqs
+    cd "${name}_seqs"
     ln -s db db.ffdata
     ln -s db.dbtype db.ffdata.dbtype
     ln -s db.index db.ffindex
@@ -495,7 +497,7 @@ workflow profile_cluster {
     self_matches = search_profiles_against_self(profiles_to_use)
     self_matches_clusters = cluster_profile_self_matches(profiles_to_use, self_matches)
     profile_clusters = merge_clusters_by_other_clusters(seqs, clusters, self_matches_clusters)
-    (pc_tsv, pc_representative, pc_stats) = extract_cluster_stats(seqs, profile_clusters)
+    (pc_tsv, pc_representative, pc_stats) = extract_cluster_stats(seqs, profile_clusters, "profile")
 
     emit:
     profile_clusters
@@ -514,10 +516,10 @@ workflow cluster {
 
     main:
     cc = cascade_cluster(seqs)
-    (cc_tsv, cc_representative, cc_stats) = extract_cluster_stats(seqs, cc)
-    (pc, pc_tsv, pc_representative, pc_stats) = profile_cluster(seqs, cc, enrichdb, enrich)
+    (cc_tsv, cc_representative, cc_stats) = extract_cluster_stats(seqs, cc, "cascade")
+    (pc, pc_tsv, pc_representative, pc_stats) = profile_cluster(seqs, cc, enrich, enrichdb)
 
-    // pc_seqs = get_cluster_seqs(seqs, pc)
+    //pc_seqs = get_cluster_seqs(seqs, pc, "profile")
 
     emit:
     cc
