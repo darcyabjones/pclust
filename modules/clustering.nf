@@ -253,7 +253,7 @@ process enrich_msas_from_search {
 
     cd "\${ORIG}"
 
-    rm -rf -- "concatenated" "match_msas"
+    # rm -rf -- "concatenated" "match_msas"
     """
 }
 

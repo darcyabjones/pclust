@@ -8,7 +8,7 @@
 process split_db {
 
     label "mmseqs"
-    label "big_task"
+    label "small_task"
 
     input:
     val chunk_size
@@ -23,7 +23,7 @@ process split_db {
     NENTRIES=\$(wc -l < "db/db.index")
     NSPLITS=\$(( (\${NENTRIES} + \${TARGET_CHUNK_SIZE} + 1) / \${TARGET_CHUNK_SIZE} ))
 
-    mmseqs splitdb "clusters/db" "tmp_split_db" --split \${NSPLITS}
+    mmseqs splitdb "db/db" "tmp_split_db" --split \${NSPLITS}
 
     for f in tmp_split_db_*.index
     do
@@ -48,28 +48,29 @@ process combine_split_dbs {
     label "small_task"
 
     input:
+    val name
     path "split_db_*"
 
     output:
-    path "combined", emit: combined
+    path "${name}", emit: combined
 
     script:
     """
     for db in split_db_*
     do
-      if [ -e "combined" ]
+      if [ -e "${name}" ]
       then
         mkdir "reduce"
-        mmseqs concatdbs "combined/db" "\${db}/db" "reduce/db" --preserve-keys
-        rm -rf -- "combined"
-        mv "reduce" "combined"
+        mmseqs concatdbs "${name}/db" "\${db}/db" "reduce/db" --preserve-keys
+        rm -rf -- "${name}"
+        mv "reduce" "${name}"
       else
-        cp -r -L "\${db}" "combined"
+        cp -r -L "\${db}" "${name}"
       fi
     done
 
     ORIG=\${PWD}
-    cd combined
+    cd "${name}"
     ln -s "db" "db.ffdata"
     ln -s "db.dbtype" "db.ffdata.dbtype"
     ln -s "db.index" "db.ffindex"
@@ -193,13 +194,13 @@ process fasttree {
 workflow split_user_db {
 
     get:
-    user
     chunk_size // Should be an integer value channel
+    user
 
     main:
     checked = check_user_db(user)
-    split_dbs = split_db(chunk_size, checked)
+    split_dbs = split_db(chunk_size, checked).chunks.flatten()
 
     emit:
-    split_dbs
+    chunks
 }

@@ -31,7 +31,7 @@ def main():
     try:
         signal.alarm(60 * 15)
         infile = sys.stdin.buffer.read()
-        for seq in Seq.parse(stringify(infile.split(b"\n"))):
+        for seq in Seq.parse(infile.split(b"\n")):
             seq.seq = seq.seq.replace(b"*", b"X")
 
             if first_length is None:
@@ -49,7 +49,7 @@ def main():
                 ))
 
             output.append(bytes(str(seq), encoding="utf-8"))
-        signal.alarm(0) 
+        signal.alarm(0)
     except Timeout:
         print(
             "Process ", first_id, "timed out. Got through", len(output),

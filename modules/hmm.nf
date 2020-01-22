@@ -16,10 +16,14 @@ process create_hhdb {
     """
     mkdir -p hhdb
 
-    cp -r -L msas hhdb
+    #for f in msas/*
+    #do
+    #    EXT="\$(basename \${f##*.})"
+    #    cp -L "\${f}" "hhdb/db_fasta.\${EXT}"
+    #done
 
     mpirun -np ${task.cpus} ffindex_apply_mpi \
-        hhdb/db_fasta.ff{data,index} \
+        msas/db.ff{data,index} \
         -i hhdb/db_a3m.ffindex \
         -d hhdb/db_a3m.ffdata \
         -- \
@@ -96,7 +100,7 @@ process combine_sort_split_hhdbs {
           path("db_${kind}.ffindex"), emit: combined
 
     script:
-    assert kind in ["cs219", "fasta", "a3m", "hhm"]
+    assert kind in ["cs219", "a3m", "hhm"]
 
     """
     ffdb combine \
@@ -123,14 +127,11 @@ process combine_sorted_hhdbs {
     tuple path("db_cs219.ffdata"),
           path("db_cs219.ffindex")
 
-    tuple path("db_fasta.ffdata"),
-          path("db_fasta.ffindex")
-
     tuple path("db_a3m.ffdata"),
           path("db_a3m.ffindex")
 
     tuple path("db_hhm.ffdata"),
-          path("db_ahm.ffindex")
+          path("db_hhm.ffindex")
 
     output:
     path "hhself", emit: db
@@ -179,7 +180,29 @@ process search_hmms {
 }
 
 
-process combine_ffdbs {
+process split_hhm_databases {
+
+    label "ffdb"
+    label "small_task"
+
+    input:
+    val chunk_size
+    path "hhdb"
+
+    output:
+    path "split_db_*"
+
+    script:
+    """
+    ffdb split \
+        --size "${chunk_size}" \
+        --basename "split_db_{index}/db.{ext}" \
+        hhdb/db_hhm.ff{data,index}
+    """
+}
+
+
+process combine_hhsuite_results {
 
     label "ffdb"
     label "small_task"
@@ -199,4 +222,67 @@ process combine_ffdbs {
       -i "combined/db_hhr.ffindex" \
       split_results_*/db_hhr.ff{data,index}
     """
+}
+
+
+// This is a way to deal with nf not liking to use the same process twice.
+workflow combine_sort_split_cs219_hhdbs {
+
+    get:
+    split_hhdbs
+    order
+
+    main:
+    combined = combine_sort_split_hhdbs("cs219", split_hhdbs.collect(), order)
+
+    emit:
+    combined
+}
+
+
+workflow combine_sort_split_a3m_hhdbs {
+
+    get:
+    split_hhdbs
+    order
+
+    main:
+    combined = combine_sort_split_hhdbs("a3m", split_hhdbs.collect(), order)
+
+    emit:
+    combined
+}
+
+
+workflow combine_sort_split_hhm_hhdbs {
+
+    get:
+    split_hhdbs
+    order
+
+    main:
+    combined = combine_sort_split_hhdbs("hhm", split_hhdbs.collect(), order)
+
+    emit:
+    combined
+}
+
+
+workflow create_and_sort_hhdb {
+
+
+    get:
+    msas // These should be split already
+    hhdata
+
+    main:
+    split_hhdbs = create_hhdb(msas, hhdata)
+    order = find_hhdbs_order(split_hhdbs.collect())
+    hhdb_cs219 = combine_sort_split_cs219_hhdbs(split_hhdbs, order)
+    hhdb_a3m = combine_sort_split_a3m_hhdbs(split_hhdbs, order)
+    hhdb_hhm = combine_sort_split_hhm_hhdbs(split_hhdbs, order)
+    hhdb = combine_sorted_hhdbs(hhdb_cs219, hhdb_a3m, hhdb_hhm)
+
+    emit:
+    hhdb
 }
