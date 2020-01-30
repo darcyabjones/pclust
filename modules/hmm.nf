@@ -22,8 +22,15 @@ process create_hhdb {
     #    cp -L "\${f}" "hhdb/db_fasta.\${EXT}"
     #done
 
+    mkdir msas_renamed
+    add_fasta_id_as_ffindex_id.py \
+        -i msas_renamed/db.ffindex \
+        msas/db{,.index}
+
+    ln -sf "\${PWD}/msas/db" "\${PWD}/msas_renamed/db.ffdata"
+
     mpirun -np ${task.cpus} ffindex_apply_mpi \
-        msas/db.ff{data,index} \
+        msas_renamed/db.ff{data,index} \
         -i hhdb/db_a3m.ffindex \
         -d hhdb/db_a3m.ffdata \
         -- \
@@ -144,31 +151,145 @@ process combine_sorted_hhdbs {
 }
 
 
-process search_hmms {
+process search_seqs_vs_hmms {
 
     label "hhsuite"
     label "big_task"
 
     input:
-    path "query"
+    val rounds // suggest 3
+    val evalue
+    val prob
+    val max_match
+    val neffmax // > 10
+    val name
+    path "in.fasta"
     path "target"
-    val nrealign
 
     output:
-    path "matches"
+    path "${name}.tsv"
 
     script:
     """
-    mkdir "matches"
+    ffindex_from_fasta -s fasta.ff{data,index} in.fasta
+
+    mkdir enriched
     mpirun -np "${task.cpus}" hhblits_mpi \
-      -i "subdb/db_hhm" \
-      -d "hhdb/db" \
-      -o "results/db_hhr" \
+        -i fasta \
+        -d target/db \
+        -oa3m enriched/db \
+        -v 0 \
+        -cpu 1 \
+        -n "${rounds}" \
+        -neffmax "${neffmax}"
+
+    mkdir matches
+    mpirun -np "${task.cpus}" hhblits_mpi \
+        -i enriched/db \
+        -d target/db \
+        -o matches/db \
+        -v 0 \
+        -cpu 1 \
+        -n 1 \
+        -e "${evalue}" \
+        -p "${prob}" \
+        -Z "${max_match}" \
+        -z 0 \
+        -B "${max_match}" \
+        -b 0 \
+        -all
+
+    mkdir match_tsvs
+    mpirun -np "${task.cpus}" ffindex_apply_mpi \
+        matches/db.ff{data,index} \
+        -i match_tsvs/db.ffindex \
+        -d match_tsvs/db.ffdata \
+        -- \
+        hh_reader.py -
+
+    ffdb collect \
+        --trim 1 \
+        match_tsvs/db.ffdata \
+        match_tsvs/db.ffindex \
+    > tmp_matches.tsv
+
+    # hh_reader should always output a header, even if there were no matches.
+    # This could fail if the subset_seqs was an empty file (no fasta records).
+    ffindex_get match_tsvs/db.ff{data,index} -n 1 \
+    | head -n1 \
+    | cat - tmp_matches.tsv \
+    > "${name}.tsv"
+    """
+}
+
+
+process subset_hhdb_by_matches {
+
+    label "ffdb"
+    label "small_task"
+
+    input:
+    path "matches.tsv"
+    path "hhself"
+
+    output:
+    path "hhself_subset"
+
+    script:
+    """
+    tail -n+2 matches.tsv \
+    | cut -f2 -d'\t' \
+    | sort -u \
+    > to_get.txt
+
+    mkdir hhself_subset
+    ffdb select \
+        -d hhself_subset/db_cs219.ffdata \
+        -i hhself_subset/db_cs219.ffindex \
+        --include to_get.txt \
+        hhself/db_cs219.ff{data,index}
+
+    ffdb select \
+        -d hhself_subset/db_a3m.ffdata \
+        -i hhself_subset/db_a3m.ffindex \
+        --include to_get.txt \
+        hhself/db_a3m.ff{data,index}
+
+    ffdb select \
+        -d hhself_subset/db_hhm.ffdata \
+        -i hhself_subset/db_hhm.ffindex \
+        --include to_get.txt \
+        hhself/db_hhm.ff{data,index}
+    """
+}
+
+
+process search_hmms_vs_hmms {
+
+    label "hhsuite"
+    label "big_task"
+
+    input:
+    val nrealign
+    val name
+    path "query"
+    path "target"
+
+    output:
+    path "${name}"
+
+    script:
+    """
+    mkdir "${name}"
+    mpirun -np "${task.cpus}" hhblits_mpi \
+      -i "query/db_hhm" \
+      -d "target/db" \
+      -o "${name}/db_hhr" \
       -n 1 \
       -cpu 1 \
       -v 0 \
-      -e 0.001 \
-      -E 0.001 \
+      -e 0.01 \
+      -E 0.01 \
       -z 0 \
       -Z "${nrealign}" \
       -b 0 \
@@ -196,7 +317,7 @@ process split_hhm_databases {
     """
     ffdb split \
         --size "${chunk_size}" \
-        --basename "split_db_{index}/db.{ext}" \
+        --basename "split_db_{index}/db_hhm.{ext}" \
         hhdb/db_hhm.ff{data,index}
     """
 }
@@ -207,20 +328,44 @@ process combine_hhsuite_results {
     label "ffdb"
     label "small_task"
 
+    tag "${name}"
+
     input:
-    path "split_results_*"
+    tuple val(name), path("split_results_*")
 
     output:
-    path "combined"
+    path "${name}"
+    path "${name}.tsv"
 
     script:
     """
-    mkdir -p "combined"
+    mkdir -p "${name}"
 
     ffdb combine \
-      -d "combined/db_hhr.ffdata" \
-      -i "combined/db_hhr.ffindex" \
+      -d "${name}/db_hhr.ffdata" \
+      -i "${name}/db_hhr.ffindex" \
       split_results_*/db_hhr.ff{data,index}
+
+    mkdir match_tsvs
+    ffindex_apply \
+        "${name}"/db_hhr.ff{data,index} \
+        -i match_tsvs/db.ffindex \
+        -d match_tsvs/db.ffdata \
+        -- \
+        hh_reader.py -
+
+    ffdb collect \
+        --trim 1 \
+        match_tsvs/db.ffdata \
+        match_tsvs/db.ffindex \
+    > tmp_matches.tsv
+
+    # hh_reader should always output a header, even if there were no matches.
+    # This could fail if the subset_seqs was an empty file (no fasta records).
+    ffindex_get match_tsvs/db.ff{data,index} -n 1 \
+    | head -n1 \
+    | cat - tmp_matches.tsv \
+    > "${name}.tsv"
     """
 }
 

@@ -1,7 +1,7 @@
 PWD=$(shell pwd)
 DEBIAN_VERSION=buster-20190812-slim
 PIPELINE_NAME=pclust
-PIPELINE_VERSION=v0.0.2
+PIPELINE_VERSION=v0.0.3
 TAG=$(PIPELINE_NAME)-$(PIPELINE_VERSION)
 MAINTAINER=darcy.ab.jones@gmail.com
 SINGULARITY_USER=darcyabjones
@@ -16,7 +16,7 @@ endef
 
 # SOFTWARE_VERSIONs
 
-MMSEQS_TAG=9-d36de
+MMSEQS_TAG=10-6d92c
 MMSEQS_REPO=https://github.com/soedinglab/MMseqs2.git
 MMSEQS_PREFIX_ARG=$(INSTALL_BASE)/mmseqs/$(MMSEQS_TAG)
 
@@ -33,7 +33,8 @@ FASTTREE_VERSION=2.1.11
 FASTTREE_URL=http://www.microbesonline.org/fasttree/FastTree-2.1.11.c
 FASTTREE_PREFIX_ARG=$(INSTALL_BASE)/fasttree/$(FASTTREE_VERSION)
 
-FFDB_TAG=db9d8a5
+FFDB_TAG=93a4a72
+
 FFDB_REPO=https://github.com/darcyabjones/ffdb.git
 FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
 
@@ -78,13 +79,13 @@ clean:
 	docker stop $(shell docker ps -aq) || true
 	docker rm $(shell docker ps -a -q) || true
 	docker rmi $(shell docker images -q) || true
-	singularity cache clean -a
+	singularity cache clean --force
 	rm -rf -- tmp
 	rm -rf -- docker
 
 tidy:
 	# Just removes untagged images to free up space
-	singularity cache clean -a
+	singularity cache clean --force
 	docker image prune -f
 
 # Generic rules

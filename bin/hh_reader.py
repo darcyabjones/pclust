@@ -54,7 +54,7 @@ def get_sequence_name(header):
     return name
 
 
-def parse_result(lines):
+def parse_result(lines):  # noqa
 
     query_id = None
     query_length = None
@@ -82,13 +82,15 @@ def parse_result(lines):
     is_alignment_section = False
 
     for line in lines:
-        if(line.startswith("Query")):
+        if (line.startswith("Query")):
             query_id = line.split()[1]
-        elif(line.startswith("Match_columns")):
+        elif (line.startswith("Match_columns")):
             query_length = int(line.split()[1])
-        elif(line.startswith("Neff")):
+        elif (line.startswith("Neff")):
             query_neff = float(line.split()[1])
-        elif(is_alignment_section and (line.startswith("No") or line.startswith("Done!"))):
+        elif (is_alignment_section and
+                (line.startswith("No") or
+                 line.startswith("Done!"))):
             if query_start is not None:
                 result = hhr_alignment(
                     query_id,
@@ -149,7 +151,7 @@ def parse_result(lines):
             try:
                 token_2 = tokens[2].replace("(", "").replace(")", "")
                 token_2 = int(token_2)
-            except:
+            except Exception:
                 raise HHRFormatError(("Converting failure of start index ({}) "
                                       "of query alignment").format(tokens[2]))
 
@@ -160,7 +162,7 @@ def parse_result(lines):
             try:
                 token_4 = tokens[4].replace("(", "").replace(")", "")
                 token_4 = int(token_4)
-            except:
+            except Exception:
                 raise HHRFormatError(("Converting failure of end index ({}) "
                                       "of query alignment").format(tokens[4]))
 
@@ -180,9 +182,11 @@ def parse_result(lines):
             try:
                 token_2 = tokens[2].replace("(", "").replace(")", "")
                 token_2 = int(token_2)
-            except:
-                raise HHRFormatError(("Converting failure of start index ({}) "
-                                      "of template alignment").format(tokens[2]))
+            except Exception:
+                raise HHRFormatError(
+                    ("Converting failure of start index ({}) "
+                     "of template alignment").format(tokens[2])
+                )
 
             if template_start is None:
                 template_start = token_2
@@ -192,9 +196,11 @@ def parse_result(lines):
             try:
                 token_4 = tokens[4].replace("(", "").replace(")", "")
                 token_4 = int(token_4)
-            except:
-                raise HHRFormatError(("Converting failure of end index ({}) "
-                                      "of template alignment").format(tokens[4]))
+            except Exception:
+                raise HHRFormatError(
+                    ("Converting failure of end index ({}) "
+                     "of template alignment").format(tokens[4])
+                )
 
             if template_end is None:
                 template_end = token_4
@@ -204,11 +210,12 @@ def parse_result(lines):
             try:
                 token_5 = tokens[4].replace("(", "").replace(")", "")
                 token_5 = int(token_5)
-            except:
-                raise HHRFormatError(("Converting failure of template length ({}) "
-                                      "in template alignment").format(tokens[5]))
+            except Exception:
+                raise HHRFormatError(
+                    ("Converting failure of template length ({}) "
+                     "in template alignment").format(tokens[5])
+                )
             template_length = token_5
-
 
     if (template_id is not None and query_start is not None):
         result = hhr_alignment(
@@ -260,9 +267,16 @@ def main():
     ]
     print("\t".join(columns))
 
-    with open(sys.argv[1]) as handle:
+    try:
+        if sys.argv[1] == "-":
+            handle = sys.stdin
+        else:
+            handle = open(sys.argv[1])
+
         for result in parse_result(handle):
             print("\t".join([str(getattr(result, c)) for c in columns]))
+    finally:
+        handle.close()
 
 
 if __name__ == "__main__":

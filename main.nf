@@ -21,6 +21,13 @@ include mafft from './modules/misc'
 include create_and_sort_hhdb from './modules/hmm'
 include copy_hhdata from './modules/hmm'
 include split_hhm_databases from './modules/hmm'
+include search_seqs_vs_hmms from './modules/hmm'
+include search_hmms_vs_hmms as search_self_hmms_vs_hmms from './modules/hmm'
+include search_hmms_vs_hmms as search_pfam_hmms_vs_hmms from './modules/hmm'
+include search_hmms_vs_hmms as search_scop_hmms_vs_hmms from './modules/hmm'
+include search_hmms_vs_hmms as search_pdb_hmms_vs_hmms from './modules/hmm'
+include subset_hhdb_by_matches from './modules/hmm'
+include combine_hhsuite_results as combine_hmm_matches from './modules/hmm'
 
 
 def help_message() {
@@ -59,13 +66,11 @@ def help_message() {
       --hhpfam            The pfam database formatted as an HHsuite database.
       --hhscop            The scop database formatted as an HHsuite database.
       --hhpdb             The pdb database formatted as an HHsuite database.
-      --hhuniref          A uniref (or similar) database formatted as an HHsuite database.
-                          Uniclust is a good preformatted option.
+
       --hhmatches_self
       --hhmatches_pfam
       --hhmatches_scop
       --hhmatches_pdb
-      --hhmatches_uniref
 
     Outputs:
 
@@ -79,7 +84,13 @@ def validate_params(params) {
     should_run["msa"] = (should_run["clustering"] || !params.msas) && !params.hhself && !params.nomsa
     should_run["tree"] = (should_run["msa"] || params.msas) && params.tree
     should_run["remote_build"] = (should_run["msa"] || !params.hhself) && !params.noremote_build
-    should_run["remote"] = (should_run["remote"] || params.hhself) && !params.noremote
+    should_run["remote"] = (should_run["remote_build"] || params.hhself) && !params.noremote
+    should_run["subset_remote"] = (should_run["remote"] && params.hhself_subset_seqs)
+
+    should_run["remote_self"] = (should_run["remote"] && !params.hhmatches_self)
+    should_run["remote_pfam"] = (should_run["remote"] && params.hhpfam && !params.hhmatches_pfam)
+    should_run["remote_scop"] = (should_run["remote"] && params.hhscop && !params.hhmatches_scop)
+    should_run["remote_pdb"] = (should_run["remote"] && params.hhpdb && !params.hhmatches_pdb)
 
     def error = false
 
@@ -238,10 +249,117 @@ workflow {
         enriched_msas = Channel.empty()
     }
 
+    if (should_run["subset_remote"]) {
+        hhself_subset_seqs = get_file(params.hhself_subset_seqs)
+        subset_hhself_matches = search_seqs_vs_hmms(
+            2,
+            0.01,
+            20,
+            20000,
+            10,
+            "hhself_subset",
+            hhself_subset_seqs,
+            hhself
+        )
+        subset_hhself = subset_hhdb_by_matches(subset_hhself_matches, hhself)
+
+    } else {
+        subset_hhself_matches = Channel.empty()
+        subset_hhself = hhself
+    }
+
     if (should_run["remote"]) {
-        split_hhm = split_hhm_databases(20000, hhself)
+        split_hhm = split_hhm_databases(20000, subset_hhself)
+
+        if (should_run["remote_self"]) {
+            split_self_hmm_matches = search_self_hmms_vs_hmms(
+                1000,
+                "split_self",
+                split_hhm,
+                subset_hhself
+            )
+            .map { ["hhself", it] }
+
+        } else if (params.hhmatches_self) {
+            split_self_hmm_matches = Channel
+                .of( ["hhself", get_file(params.hhmatches_self)] )
+
+        } else {
+            param_unexpected_error()
+        }
+
+        if (should_run["remote_pfam"]) {
+            pfam = Channel.value(get_file(params.hhpfam))
+
+            split_pfam_hmm_matches = search_pfam_hmms_vs_hmms(
+                1000,
+                "split_pfam",
+                split_hhm,
+                pfam
+            )
+            .map(["hhpfam", it])
+
+        } else if (params.hhmatches_pfam) {
+            split_pfam_hmm_matches = Channel
+                .of( ["hhpfam", get_file(params.hhmatches_pfam)] )
+
+        } else {
+            split_pfam_hmm_matches = Channel.empty()
+
+        }
+
+        if (should_run["remote_scop"]) {
+            scop = Channel.value(get_file(params.hhscop))
+
+            split_scop_hmm_matches = search_scop_hmms_vs_hmms(
+                1000,
+                "split_scop",
+                split_hhm,
+                scop
+            )
+            .map(["hhscop", it])
+
+        } else if (params.hhmatches_scop) {
+            split_scop_hmm_matches = Channel
+                .of( ["hhscop", get_file(params.hhmatches_scop)] )
+
+        } else {
+            split_scop_hmm_matches = Channel.empty()
+
+        }
+
+
+        if (should_run["remote_pdb"]) {
+            pdb = Channel.value(get_file(params.hhpdb))
+
+            split_pdb_hmm_matches = search_pdb_hmms_vs_hmms(
+                1000,
+                "split_pdb",
+                split_hhm,
+                pdb
+            )
+            .map(["hhpdb", it])
+
+        } else if (params.hhmatches_pdb) {
+            split_pdb_hmm_matches = Channel
+                .of( ["hhpdb", get_file(params.hhmatches_pdb)] )
+
+        } else {
+            split_pdb_hmm_matches = Channel.empty()
+
+        }
+
+        (hmm_matches, hmm_matches_tsv) = combine_hmm_matches(
+            split_self_hmm_matches.mix(
+                split_pfam_hmm_matches,
+                split_scop_hmm_matches,
+                split_pdb_hmm_matches
+            )
+        )
+
     } else {
         split_hhm = Channel.empty()
+        self_hmm_matches = Channel.empty()
     }
 
     publish:
@@ -258,4 +376,8 @@ workflow {
     trees to: "${params.outdir}/msas"
     enriched_msas to: "${params.outdir}/msas"
     hhself to: "${params.outdir}/hhself"
+    subset_hhself to: "${params.outdir}/hhself"
+    subset_hhself_matches to: "${params.outdir}/hhself"
+    hmm_matches to: "${params.outdir}/remote"
+    hmm_matches_tsv to: "${params.outdir}/remote"
 }
