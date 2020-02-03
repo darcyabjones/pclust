@@ -360,6 +360,8 @@ workflow {
     } else {
         split_hhm = Channel.empty()
         self_hmm_matches = Channel.empty()
+        hmm_matches = Channel.empty()
+        hmm_matches_tsv = Channel.empty()
     }
 
     publish:

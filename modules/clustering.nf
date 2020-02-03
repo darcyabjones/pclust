@@ -182,9 +182,9 @@ process search_profiles_against_self {
       "tmp" \
       --threads "${task.cpus}" \
       --max-seqs 300 \
-      -c 0.8 \
-      --min-seq-id 0.3 \
-      --cov-mode 1 \
+      -c 0.7 \
+      --cov-mode 0 \
+      --min-seq-id 0.1 \
       -s 6.0 \
       -e 0.00001 \
       --db-load-mode 0 \
