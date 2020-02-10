@@ -216,14 +216,14 @@ workflow {
 
     if (should_run["msa"]) {
         pc_seqs = get_cluster_seqs(seq_db, pc, "profile")
-        split_pc_seqs = split_pc_seqs_db(20000, pc_seqs)
+        split_pc_seqs = split_pc_seqs_db(20000, "protein", pc_seqs)
         split_msas = mafft(split_pc_seqs.flatten())
         msas = combine_split_msa_dbs("msas", split_msas.collect())
 
     } else {
         if ( params.msas ) {
             msas = check_user_msas_db(get_file(params.msas))
-            split_msas = split_msa_db(20000, msas).chunks.flatten()
+            split_msas = split_msa_db(20000, "protein", msas).chunks.flatten()
         } else {
             msas = Channel.empty()
             split_msas = Channel.empty()

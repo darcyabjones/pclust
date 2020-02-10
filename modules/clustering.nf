@@ -39,11 +39,14 @@ process msa_to_profile {
     """
     mkdir -p "msa_profiles"
 
+    cp -rL msas msas_tmp
+    awk 'BEGIN { printf("%c%c%c%c",11,0,0,0); exit; }' > msas_tmp/db.dbtype
+
     mmseqs msa2profile \
-      "msas/db" \
+      "msas_tmp/db" \
       "msa_profiles/db" \
       --match-mode 1 \
-      --match-ratio 1
+      --match-ratio 0.3
     """
 }
 
@@ -448,12 +451,9 @@ process get_cluster_seqs {
       "clusters/db" \
       "${name}_seqs/db"
 
-    ORIG="\${PWD}"
-    cd "${name}_seqs"
-    ln -s db db.ffdata
-    ln -s db.dbtype db.ffdata.dbtype
-    ln -s db.index db.ffindex
-    cd \${ORIG}
+    # The mmseqs createseqfiledb type is Generic, which doesn't play well
+    # with splitdb. This makes the type Protein.
+    cp seqs/db.dbtype "${name}_seqs/db.dbtype"
     """
 }
 

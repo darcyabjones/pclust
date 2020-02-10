@@ -12,18 +12,34 @@ process split_db {
 
     input:
     val chunk_size
+    val dbtype
     path "db"
 
     output:
     path "split_db_*", emit: chunks
 
-    script:
+    script: 
     """
     TARGET_CHUNK_SIZE="${chunk_size}"
     NENTRIES=\$(wc -l < "db/db.index")
     NSPLITS=\$(( (\${NENTRIES} + \${TARGET_CHUNK_SIZE} + 1) / \${TARGET_CHUNK_SIZE} ))
 
-    mmseqs splitdb "db/db" "tmp_split_db" --split \${NSPLITS}
+    cp -rL db db_tmp
+    if [ "${dbtype}" = "protein" ]
+    then
+        awk 'BEGIN { printf("%c%c%c%c",0,0,0,0); exit; }' > db_tmp/db.dbtype
+    elif [ "${dbtype}" = "msa" ]
+    then
+        awk 'BEGIN { printf("%c%c%c%c",11,0,0,0); exit; }' > db_tmp/db.dbtype
+    elif [ "${dbtype}" = "nucleotide" ]
+    then
+        awk 'BEGIN { printf("%c%c%c%c",1,0,0,0); exit; }' > db_tmp/db.dbtype
+    fi
+    
+
+    mmseqs splitdb "db_tmp/db" "tmp_split_db" --split \${NSPLITS}
+
+    rm -rf -- db_tmp
 
     for f in tmp_split_db_*.index
     do
@@ -195,11 +211,12 @@ workflow split_user_db {
 
     get:
     chunk_size // Should be an integer value channel
+    dbtype
     user
 
     main:
     checked = check_user_db(user)
-    split_dbs = split_db(chunk_size, checked).chunks.flatten()
+    split_dbs = split_db(chunk_size, db_type, checked).chunks.flatten()
 
     emit:
     chunks

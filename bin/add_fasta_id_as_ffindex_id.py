@@ -4,7 +4,7 @@ import sys
 import argparse
 import mmap
 
-from typing import List, Sequence
+from typing import List, Sequence, Iterator
 from typing import Optional
 from typing import BinaryIO
 
@@ -57,6 +57,14 @@ class Timeout(Exception):
     pass
 
 
+def filter_null(handle: Iterator[str]) -> Iterator[str]:
+    for line in handle:
+        sline = line.strip()
+        if sline != b'\0':
+            yield sline
+    return
+
+
 def run(
     ffdata: BinaryIO,
     ffindex: BinaryIO,
@@ -82,7 +90,7 @@ def run(
 
             # Parse the contents as a fasta file, and get the id of the first
             # record.
-            seqs = Seq.parse(data.split(b'\n'))
+            seqs = Seq.parse(filter_null(data.split(b'\n')))
             try:
                 new_name = next(seqs).id
             except StopIteration:
