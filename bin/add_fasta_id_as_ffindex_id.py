@@ -94,10 +94,11 @@ def run(
             try:
                 new_name = next(seqs).id
             except StopIteration:
-                EmptySequenceError((
-                    "Encountered an empty record at ffindex "
-                    f"document with name {old_index.name}."
-                ))
+                continue
+                #raise EmptySequenceError((
+                #    "Encountered an empty record at ffindex "
+                #    f"document with name {old_index.name}."
+                #))
 
             # Create a new index record with the new name.
             new_index = IndexRow(

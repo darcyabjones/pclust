@@ -18,6 +18,12 @@ def stringify(handle):
         yield line.strip().decode("utf-8")
     return
 
+def filter_null(handle: Iterator[str]) -> Iterator[str]:
+    for line in handle:
+        sline = line.strip()
+        if sline != b'\0' and sline != b'':
+            yield sline
+    return
 
 def main():
 
