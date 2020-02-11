@@ -60,6 +60,20 @@ option_list <- list(
       )
     ),
     make_option(
+        c("-v", "--verbose"),
+        type="logical",
+        action="store_true",
+        default=FALSE,
+        help="Print logging info to stderr.",
+    ),
+    make_option(
+      "--threads",
+      type="integer",
+      action="store",
+      default=1,
+      help="How many threads can decipher use? Default: 1"
+    ),
+    make_option(
         "--version",
         type="logical",
         action="store_true",
@@ -74,6 +88,10 @@ parser <- OptionParser(
 )
 
 args <- parse_args(parser)
+
+log_stderr <- function(...) {
+  cat(sprintf(...), sep='', file=stderr())
+}
 
 quit_with_err <- function(...) {
   log_stderr(...)
@@ -95,6 +113,9 @@ main <- function(args) {
 
   # anything that normally goes to stdout will go to stderr.
   sink(stderr(), type = "output")
+  if (args$verbose) {
+    log_stderr("start\n")
+  }
 
   validate_file(args$infile)
   validate_file(args$outfile)
@@ -108,7 +129,11 @@ main <- function(args) {
   }
 
   seqs <- readAAStringSet(args$infile)
-  seqs <- RemoveGaps(seqs, removeGaps = "all", processors = 1)
+  seqs <- RemoveGaps(seqs, removeGaps = "all", processors = args$threads)
+
+  if (args$verbose) {
+    log_stderr("read file and removed gaps\n")
+  }
 
   subs_matrix <- PFASUM[,,as.character(args$matrix)]
   aligned <- AlignSeqs(
@@ -116,18 +141,33 @@ main <- function(args) {
     iterations=2,
     refinements=2,
     substitutionMatrix=subs_matrix,
-    processors=1,
-    verbose=FALSE
+    processors=args$threads,
+    verbose=args$verbose
   )
+
+  if (args$verbose) {
+    log_stderr("aligned seqs\n")
+  }
 
   adjusted <- AdjustAlignment(
     aligned,
     substitutionMatrix = subs_matrix,
-    processors = 1
+    processors = args$threads
   )
 
+  if (args$verbose) {
+    log_stderr("adjusted alignment\n")
+  }
+
   if (args$stagger) {
-    staggered <- StaggerAlignment(adjusted, processors = 1, verbose = FALSE)
+    staggered <- StaggerAlignment(
+      adjusted,
+      processors = args$threads,
+      verbose = args$verbose
+    )
+    if (args$verbose) {
+      log_stderr("staggered alignment\n")
+    }
   } else {
     staggered <- adjusted
   }
@@ -146,11 +186,19 @@ main <- function(args) {
       "_consensus"
     )
     with_consensus <- c(consensus, staggered)
+
+    if (args$verbose) {
+      log_stderr("added consensus sequence\n")
+    }
   } else {
     with_consensus <- staggered
   }
 
   writeXStringSet(with_consensus, args$outfile)
+
+  if (args$verbose) {
+    log_stderr("Finished!\n")
+  }
 }
 
 main(args)
