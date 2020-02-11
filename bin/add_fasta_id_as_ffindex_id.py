@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import re
 import sys
 import argparse
 import mmap
@@ -28,6 +29,16 @@ def cli(prog: str, args: Sequence[str]) -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-s", "--strip-consensus",
+        action="store_true",
+        default=False,
+        help=(
+            "Strip the suffix '_consensus' from the string before adding it "
+            "to the id."
+        )
+    )
+
+    parser.add_argument(
         "--mmap",
         action="store_true",
         default=False,
@@ -36,6 +47,7 @@ def cli(prog: str, args: Sequence[str]) -> argparse.Namespace:
               "or sorted chunks, but requires enough memory to store the "
               "entire ffdata file."),
     )
+
     parser.add_argument(
         "ffdata",
         metavar="FFDATA_FILE",
@@ -70,6 +82,7 @@ def run(
     ffindex: BinaryIO,
     index: BinaryIO,
     should_mmap: bool,
+    strip_consensus: bool,
 ):
     try:
         if should_mmap:
@@ -99,6 +112,9 @@ def run(
                 #    "Encountered an empty record at ffindex "
                 #    f"document with name {old_index.name}."
                 #))
+
+            if strip_consensus:
+                new_name = re.sub(r"_consensus$", '', new_name)
 
             # Create a new index record with the new name.
             new_index = IndexRow(
@@ -130,6 +146,7 @@ def main():  # noqa
             ffindex=args.ffindex,
             index=args.index,
             should_mmap=args.mmap,
+            strip_consensus=args.strip_consensus,
         )
     except FFError as e:
         print(f"Error: {e.msg}")

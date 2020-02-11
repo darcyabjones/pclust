@@ -16,7 +16,7 @@ include split_db as split_pc_seqs_db from './modules/misc'
 include split_db as split_msa_db from './modules/misc'
 include combine_split_dbs as combine_split_msa_dbs from './modules/misc'
 include combine_split_dbs as combine_split_tree_dbs from './modules/misc'
-include mafft from './modules/misc'
+include decipher from './modules/misc'
 
 include create_and_sort_hhdb from './modules/hmm'
 include copy_hhdata from './modules/hmm'
@@ -217,7 +217,7 @@ workflow {
     if (should_run["msa"]) {
         pc_seqs = get_cluster_seqs(seq_db, pc, "profile")
         split_pc_seqs = split_pc_seqs_db(20000, "protein", pc_seqs)
-        split_msas = mafft(split_pc_seqs.flatten())
+        split_msas = decipher(split_pc_seqs.flatten())
         msas = combine_split_msa_dbs("msas", split_msas.collect())
 
     } else {
