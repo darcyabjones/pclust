@@ -18,7 +18,7 @@ process split_db {
     output:
     path "split_db_*", emit: chunks
 
-    script: 
+    script:
     """
     TARGET_CHUNK_SIZE="${chunk_size}"
     NENTRIES=\$(wc -l < "db/db.index")
@@ -198,7 +198,7 @@ process decipher {
       "msas/db" \
       --threads 1 \
       -- \
-      run_decipher.R
+      run_decipher.R --infile /dev/stdin --outfile /dev/stdout --add-consensus
     """
 }
 
