@@ -46,7 +46,7 @@ process msa_to_profile {
       "msas_tmp/db" \
       "msa_profiles/db" \
       --match-mode 1 \
-      --match-ratio 0.3
+      --match-ratio 1
     """
 }
 

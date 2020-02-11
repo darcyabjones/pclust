@@ -16,6 +16,10 @@ endef
 
 # SOFTWARE_VERSIONs
 
+DECIPHER_VERSION=2.10.0
+DECIPHER_URL=http://www2.decipher.codes/DECIPHER_2.10.0.tar.gz
+DECIPHER_PREFIX_ARG=$(INSTALL_BASE)/decipher/$(DECIPHER_VERSION)
+
 MMSEQS_TAG=10-6d92c
 MMSEQS_REPO=https://github.com/soedinglab/MMseqs2.git
 MMSEQS_PREFIX_ARG=$(INSTALL_BASE)/mmseqs/$(MMSEQS_TAG)
@@ -33,13 +37,13 @@ FASTTREE_VERSION=2.1.11
 FASTTREE_URL=http://www.microbesonline.org/fasttree/FastTree-2.1.11.c
 FASTTREE_PREFIX_ARG=$(INSTALL_BASE)/fasttree/$(FASTTREE_VERSION)
 
-FFDB_TAG=93a4a72
+FFDB_TAG=2a5f174
 
 FFDB_REPO=https://github.com/darcyabjones/ffdb.git
 FFDB_PREFIX_ARG=$(INSTALL_BASE)/ffdb/$(FFDB_TAG)
 
 
-GENERAL=base mmseqs python3 hhsuite mafft fasttree ffdb
+GENERAL=base mmseqs python3 hhsuite decipher fasttree ffdb
 OPEN=$(GENERAL)
 
 all: docker/all singularity/all
@@ -185,6 +189,22 @@ docker/hhsuite: hhsuite.Dockerfile docker/base docker/ffdb
 	@touch $@
 
 
+docker/decipher: decipher.Dockerfile docker/base docker/mmseqs
+	docker build \
+	  --build-arg IMAGE="$(BASE_IMAGE)" \
+	  --build-arg DECIPHER_VERSION="$(DECIPHER_VERSION)" \
+	  --build-arg DECIPHER_URL="$(DECIPHER_URL)" \
+	  --build-arg DECIPHER_PREFIX_ARG="$(DECIPHER_PREFIX_ARG)" \
+	  --build-arg MMSEQS_IMAGE="$(call make_image_name,mmseqs)" \
+	  --build-arg MMSEQS_TAG="$(MMSEQS_TAG)" \
+	  --build-arg MMSEQS_PREFIX_ARG="$(MMSEQS_PREFIX_ARG)" \
+	  --file $< \
+	  -t "$(call make_image_name,$@)" \
+	  .
+	@mkdir -p "$(dir $@)"
+	@touch $@
+
+
 docker/mafft: mafft.Dockerfile docker/base docker/mmseqs
 	docker build \
 	  --build-arg IMAGE="$(BASE_IMAGE)" \
@@ -227,9 +247,9 @@ docker/pclust: pclust.Dockerfile docker/all
 	  --build-arg HHSUITE_IMAGE="$(call make_image_name,hhsuite)" \
 	  --build-arg HHSUITE_TAG="$(HHSUITE_TAG)" \
 	  --build-arg HHSUITE_PREFIX_ARG="$(HHSUITE_PREFIX_ARG)" \
-	  --build-arg MAFFT_IMAGE="$(call make_image_name,mafft)" \
-	  --build-arg MAFFT_VERSION="$(MAFFT_VERSION)" \
-	  --build-arg MAFFT_PREFIX_ARG="$(MAFFT_PREFIX_ARG)" \
+	  --build-arg DECIPHER_IMAGE="$(call make_image_name,decipher)" \
+	  --build-arg DECIPHER_VERSION="$(DECIPHER_VERSION)" \
+	  --build-arg DECIPHER_PREFIX_ARG="$(DECIPHER_PREFIX_ARG)" \
 	  --build-arg FASTTREE_IMAGE="$(call make_image_name,fasttree)" \
 	  --build-arg FASTTREE_VERSION="$(FASTTREE_VERSION)" \
 	  --build-arg FASTTREE_PREFIX_ARG="$(FASTTREE_PREFIX_ARG)" \

@@ -2,14 +2,14 @@ ARG IMAGE="darcyabjones/base"
 ARG PYTHON3_IMAGE
 ARG MMSEQS_IMAGE
 ARG HHSUITE_IMAGE
-ARG MAFFT_IMAGE
+ARG DECIPHER_IMAGE
 ARG FASTTREE_IMAGE
 ARG FFDB_IMAGE
 
 FROM "${PYTHON3_IMAGE}" as python3_builder
 FROM "${MMSEQS_IMAGE}" as mmseqs_builder
 FROM "${HHSUITE_IMAGE}" as hhsuite_builder
-FROM "${MAFFT_IMAGE}" as mafft_builder
+FROM "${DECIPHER_IMAGE}" as decipher_builder
 FROM "${FASTTREE_IMAGE}" as fasttree_builder
 FROM "${FFDB_IMAGE}" as ffdb_builder
 
@@ -41,15 +41,15 @@ COPY --from=hhsuite_builder "${HHSUITE_PREFIX}" "${HHSUITE_PREFIX}"
 COPY --from=hhsuite_builder "${APT_REQUIREMENTS_FILE}" /build/apt/hhsuite.txt
 
 
-ARG MAFFT_VERSION
-ARG MAFFT_PREFIX_ARG
-ENV MAFFT_PREFIX="${MAFFT_PREFIX_ARG}"
-LABEL mafft.version="${MAFFT_VERSION}"
+ARG DECIPHER_VERSION
+ARG DECIPHER_PREFIX_ARG
+ENV DECIPHER_PREFIX="${DECIPHER_PREFIX_ARG}"
+LABEL decipher.version="${DECIPHER_VERSION}"
 
-COPY --from=mafft_builder "${MAFFT_PREFIX}" "${MAFFT_PREFIX}"
-COPY --from=mafft_builder "${APT_REQUIREMENTS_FILE}" /build/apt/mafft.txt
+ENV R_LIBS_USER="${DECIPHER_PREFIX}:${R_LIBS_USER:-}"
 
-ENV PATH="${MAFFT_PREFIX}/bin:${PATH}"
+COPY --from=decipher_builder "${DECIPHER_PREFIX}" "${DECIPHER_PREFIX}"
+COPY --from=decipher_builder "${APT_REQUIREMENTS_FILE}" /build/apt/decipher.txt
 
 
 ARG FASTTREE_VERSION

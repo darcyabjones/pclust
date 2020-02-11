@@ -25,6 +25,7 @@ process create_hhdb {
     mkdir msas_renamed
     add_fasta_id_as_ffindex_id.py \
         -i msas_renamed/db.ffindex \
+        --strip-consensus \
         msas/db{,.index}
 
     ln -sf "\${PWD}/msas/db" "\${PWD}/msas_renamed/db.ffdata"
@@ -218,7 +219,10 @@ process search_seqs_vs_hmms {
     ffindex_get match_tsvs/db.ff{data,index} -n 1 \
     | head -n1 \
     | cat - tmp_matches.tsv \
+    | awk -F '\t' 'BEGIN {OFS="\t"} {\$2=gensub(/_consensus\$/, "", "g", \$2); print}' \
     > "${name}.tsv"
+
+    # rm tmp_matches.tsv
     """
 }
 
@@ -365,6 +369,7 @@ process combine_hhsuite_results {
     ffindex_get match_tsvs/db.ff{data,index} -n 1 \
     | head -n1 \
     | cat - tmp_matches.tsv \
+    | awk -F '\t' 'BEGIN {OFS="\t"} {\$1=gensub(/_consensus\$/, "", "g", \$1); print}' \
     > "${name}.tsv"
     """
 }

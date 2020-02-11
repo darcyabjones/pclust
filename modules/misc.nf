@@ -35,7 +35,6 @@ process split_db {
     then
         awk 'BEGIN { printf("%c%c%c%c",1,0,0,0); exit; }' > db_tmp/db.dbtype
     fi
-    
 
     mmseqs splitdb "db_tmp/db" "tmp_split_db" --split \${NSPLITS}
 
@@ -177,6 +176,31 @@ process mafft {
     """
 }
 
+/*
+ * Construct MSA from the fasta databases.
+ */
+process decipher {
+
+    label "decipher"
+    label "big_task"
+
+    input:
+    path "fastas"
+
+    output:
+    path "msas", emit: msas
+
+    script:
+    """
+    mkdir -p "msas"
+    mpirun -np "${task.cpus}" mmseqs apply \
+      "fastas/db" \
+      "msas/db" \
+      --threads 1 \
+      -- \
+      run_decipher.R
+    """
+}
 
 /*
  * Construct an ML tree for each cluster.
