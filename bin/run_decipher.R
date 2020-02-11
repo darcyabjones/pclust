@@ -100,8 +100,76 @@ quit_with_err <- function(...) {
 
 validate_file <- function(path) {
   if (is.null(path)) {
-    quit_with_err("Please provide required file")
+    quit_with_err("Please provide required file\n")
   }
+}
+
+
+align_seqs <- function(
+  seqs,
+  stagger=TRUE,
+  sub_matrix=30,
+  threads=1,
+  verbose=FALSE
+) {
+  subs_matrix <- PFASUM[,,as.character(sub_matrix)]
+  aligned <- AlignSeqs(
+    seqs,
+    iterations=2,
+    refinements=2,
+    substitutionMatrix=subs_matrix,
+    processors=threads,
+    verbose=verbose
+  )
+
+  if (verbose) {
+    log_stderr("aligned seqs\n")
+  }
+
+  adjusted <- AdjustAlignment(
+    aligned,
+    substitutionMatrix = subs_matrix,
+    processors = threads
+  )
+
+  if (verbose) {
+    log_stderr("adjusted alignment\n")
+  }
+
+  if (stagger) {
+    staggered <- StaggerAlignment(
+      adjusted,
+      processors = threads,
+      verbose = verbose
+    )
+    if (verbose) {
+      log_stderr("staggered alignment\n")
+    }
+  } else {
+    staggered <- adjusted
+  }
+
+  return(staggered)
+}
+
+
+add_consensus <- function(aligned, threshold) {
+    consensus <- ConsensusSequence(
+      aligned,
+      threshold = threshold,
+      ignoreNonBases = FALSE,
+      ambiguity = FALSE,
+      includeTerminalGaps = TRUE,
+      noConsensusChar = "-"
+    )
+
+    names(consensus) <- paste0(
+      gsub("(\\S*).*", "\\1", names(aligned)[1], perl=TRUE),
+      "_consensus"
+    )
+    with_consensus <- c(consensus, aligned)
+
+    return(with_consensus)
 }
 
 
@@ -131,67 +199,35 @@ main <- function(args) {
   seqs <- readAAStringSet(args$infile)
   seqs <- RemoveGaps(seqs, removeGaps = "all", processors = args$threads)
 
+  log_stderr(as.character(length(seqs)))
+
   if (args$verbose) {
     log_stderr("read file and removed gaps\n")
   }
 
-  subs_matrix <- PFASUM[,,as.character(args$matrix)]
-  aligned <- AlignSeqs(
-    seqs,
-    iterations=2,
-    refinements=2,
-    substitutionMatrix=subs_matrix,
-    processors=args$threads,
-    verbose=args$verbose
-  )
-
-  if (args$verbose) {
-    log_stderr("aligned seqs\n")
-  }
-
-  adjusted <- AdjustAlignment(
-    aligned,
-    substitutionMatrix = subs_matrix,
-    processors = args$threads
-  )
-
-  if (args$verbose) {
-    log_stderr("adjusted alignment\n")
-  }
-
-  if (args$stagger) {
-    staggered <- StaggerAlignment(
-      adjusted,
-      processors = args$threads,
-      verbose = args$verbose
+  if (length(seqs) > 1) {
+    aligned <- align_seqs(
+      seqs,
+      args$stagger,
+      args$matrix,
+      args$threads,
+      args$verbose
     )
-    if (args$verbose) {
-      log_stderr("staggered alignment\n")
-    }
+  } else if (length(seqs) == 0) {
+    quit_with_err("Input file was empty.\n")
   } else {
-    staggered <- adjusted
+    aligned <- seqs
   }
 
   if (args$consensus) {
-    consensus <- ConsensusSequence(
-      staggered,
-      threshold = args$consensus_threshold,
-      ignoreNonBases = FALSE,
-      ambiguity = FALSE,
-      includeTerminalGaps = TRUE,
-      noConsensusChar = "-"
-    )
-    names(consensus) <- paste0(
-      gsub("(\\S*).*", "\\1", names(staggered)[1], perl=TRUE),
-      "_consensus"
-    )
-    with_consensus <- c(consensus, staggered)
+    with_consensus <- add_consensus(aligned, args$consensus_threshold)
 
     if (args$verbose) {
       log_stderr("added consensus sequence\n")
     }
+
   } else {
-    with_consensus <- staggered
+    with_consensus <- aligned
   }
 
   writeXStringSet(with_consensus, args$outfile)
